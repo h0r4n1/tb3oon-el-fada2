@@ -1,0 +1,435 @@
+{
+  "_notice": "SYNTHETIC DEMONSTRATION DATA for automated tests only. Not Mars observations, not real routes, not from any NASA product.",
+  "dataVersion": "synthetic-v1",
+  "isSynthetic": true,
+  "sourceIds": [
+    "synthetic-test-only"
+  ],
+  "candidates": [
+    {
+      "id": "syn-route-a",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 9,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 9,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-b",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.025017776568627182,
+            0.010276683359220695
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 2,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 2,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.025017776568627182,
+            0.010276683359220695
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 2,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 2,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-c-steep",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.016903903086910258,
+            -0.016903903086910258
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 20,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 5,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.016903903086910258,
+            -0.016903903086910258
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 5,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 20,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-a-copy",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 9,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 9,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-e-unknown",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0.016903903086910258
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 4,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": null,
+            "method": "unknown",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0.016903903086910258
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": null,
+            "method": "unknown",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 4,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-f-broken",
+      "visitTargetIds": [
+        "syn-delta"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0.033807806173820516,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0.033807806173820516,
+            0
+          ],
+          [
+            0.016903903086910258,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 9,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          },
+          {
+            "slopeDeg": 3,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    },
+    {
+      "id": "syn-route-g-elsewhere",
+      "visitTargetIds": [
+        "syn-ridge"
+      ],
+      "outbound": {
+        "geometry": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0.016903903086910258
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 1,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "return": {
+        "geometry": [
+          [
+            0,
+            0.016903903086910258
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "segments": [
+          {
+            "slopeDeg": 1,
+            "method": "elevation-gradient",
+            "evidence": "SYNTHETIC test value"
+          }
+        ]
+      },
+      "coveragePercent": null,
+      "sourceIds": []
+    }
+  ]
+}
