@@ -1,17 +1,29 @@
 # Route engine notes (Abood, Route Engineer)
 
 Plain-English notes on the route maths, for teammates and judges.
-All numbers come from `src/config.js` (brief section 6 defaults). They are
-tunable prototype assumptions, not NASA or rover-engineering standards.
+All numbers come from `MISSION_CONFIG` in `server/config.ts` (owned by the
+backend team; brief section 6 defaults). They are tunable prototype
+assumptions, not NASA or rover-engineering standards.
 
 ## Files
 
+The route engine runs on the server (Node), never in `src/` (the frontend).
+
 | File | What it does |
 |---|---|
-| `src/config.js` | The one place where mission numbers live (speed, slope limit, battery, etc.). |
-| `src/geo.js` | Mars distance (haversine), `pathDistanceKm` for GeoJSON polylines, plus small helpers (`clamp`, `toRadians`). |
-| `src/routes.js` | `evaluateSegment` (one segment) and `evaluateRoute` (whole route with return trip, scores and verdict). |
-| `tests/*.test.js` | Hand-checked tests. Run them with `npm test`. |
+| `server/route-engine.js` | `planRoutes(request)`: the API's entry point. Loads data, matches, evaluates, ranks. |
+| `server/candidates.js` | Reads and checks `candidates.json` and `targets.geojson`, turns paths into segments, matches routes to a request, adds up stops and science. |
+| `server/ranking.js` | Removes duplicate paths and assigns the Recommended / Fastest / Science-focused roles. |
+| `server/route-math.js` | `evaluateSegment` (one segment) and `evaluateRoute` (whole route with return trip, scores and verdict). |
+| `server/geo.js` | Mars distance (haversine), `pathDistanceKm` for GeoJSON polylines, plus small helpers (`clamp`, `toRadians`). |
+| `tests/*.test.js` | My hand-checked tests. Run them with `node --test tests/*.test.js` (the team's `npm test` runs only the API tests). |
+| `tests/fixtures/` | **Synthetic** demonstration data for tests only. Not Mars observations. |
+
+Config key names used (from `server/config.ts`): `flatSpeedKmh`,
+`maxSlopeDegrees`, `baselineKWhPerKm`, `minimumTimeReserveMinutes`,
+`batteryCapacityKWh`, `batteryReservePercent` (a percent: reserve kWh =
+capacity × percent / 100 = 2 kWh), `auxiliaryKW`, `defaultStopMinutes`,
+`terrainWeight`, `timeWeight`, `marsRadiusM`.
 
 ## Distance on Mars (brief section 5)
 
@@ -71,7 +83,7 @@ safetyScore, timeScore, overallScore, feasibility, reasons, coveragePercent`.
 | T | outbound drive + stop minutes | Time spent on the outbound itinerary |
 | H | remaining − 15 min reserve | Time we are allowed to use |
 | U | 100 · clamp(1 − T/H, 0, 1) | Time score: more spare time gives a higher score |
-| C | 0.70 S + 0.30 U | Overall score, kept at full precision (round for display only) |
+| C | terrainWeight·S + timeWeight·U (0.7 and 0.3) | Overall score, kept at full precision (round for display only) |
 | E | outbound kWh + return kWh + 0.2 kW × (all drive + stop minutes) / 60 | Total energy, including the trip home |
 
 **Verdict:**
@@ -139,20 +151,95 @@ Reserve edge cases for Route A:
   unknown, its time and energy are unknown, so the time and battery checks
   can't run. The route is unverified rather than guessed.
 
+- **Scores are clamped to 0–100.** Mathematically S and C are always in that
+  range. The clamp only removes tiny rounding errors (for example
+  −0.00000000000002), which the team's contract would reject.
+
+## Planning and ranking: `planRoutes(request)` (brief sections 6 and 7)
+
+1. Load `candidates.json` and `targets.geojson` with the team's
+   `loadJsonData`. If a file is missing, `DATA_NOT_READY` (503) passes
+   through unchanged. If a file has the wrong overall shape, the result is
+   `INVALID_DATA` (503).
+2. If `candidates.json`'s `dataVersion` differs from the request's, no routes
+   are planned and `errors` explains why.
+3. Each candidate is checked. A broken one is skipped and named in `errors`,
+   because returning it would make the API reject the whole response.
+4. Routes are kept only if they match the request's origin, destination, base
+   (within 50 m) and stops (in order). See `docs/candidates-format.md`.
+5. Each kept route is evaluated with `evaluateRoute` (server config, the crew's
+   remaining minutes and battery).
+6. The routes are ranked:
+   - **Duplicates:** identical outbound + return paths are shown once.
+   - **Eligible** means feasibility `pass`.
+   - **Recommended:** highest C. Ties go to the higher S, then the lower T.
+   - **Fastest:** lowest T. Ties go to the higher C.
+   - **Science-focused:** highest science value (sum of unique rated targets).
+     Ties go to the higher C. Routes with an unrated target are excluded.
+     A science value of 0 earns no science role.
+   - One route can hold several roles. Roles are written at the start of its
+     `reasons`. Alternatives are never invented.
+   - A single eligible route is labelled "Only one feasible route was found."
+   - If nothing is eligible, a message goes into `errors`.
+   - **Order:** recommended first, then other eligible routes, then blocked,
+     then unverified. Inside each group, the data-file order is kept.
+   - A `null` overall score (zero-distance route) can't be recommended and
+     sorts after scored routes, but it can still be Fastest.
+
+## Known limitations / milestone 4
+
+- **Forbidden areas are not implemented.** The brief blocks routes that cross
+  a verified forbidden area, but no such data exists yet.
+- **Mid-mission replanning is not designed yet.** Curated routes start at
+  base, so a request whose origin is the rover's current position matches
+  nothing.
+  - **Return from midway (proposal):** retrace the already-known outbound path
+    backwards. Take the active route's points up to the rover's current
+    position, reverse them, and reuse the same per-segment slopes. The first
+    piece is the partial segment the rover is on: its length comes from the
+    current position to the previous point, and it keeps that segment's slope.
+    This uses only terrain we already evaluated. It never draws a new straight
+    line through unknown ground. Budgets use the *current* remaining minutes and
+    battery, so time and energy already used are preserved.
+  - **Add stop while paused:** the data would need either (a) curated legs
+    from points along the active route to each candidate stop and back onto
+    the route or to base, each with per-segment slopes, or (b) an elevation
+    grid (bounds, spacing, slope or elevation, nodata mask) so a graph search
+    can build those legs. We'd also need the rover's position as an index along
+    the active route, plus the stop's `stopMinutes` and `scienceValue`.
+    The replan must be previewed and committed only on Accept.
+- **No terrain coverage yet:** `coveragePercent` is `null` until the data
+  gives it.
+
 ## Open questions
 
+- **For Adi: `tests/api.test.ts:110` must expect `DATA_NOT_READY`.** The test
+  uses the real engine. It used to expect the placeholder's `ENGINE_NOT_READY`.
+  Now the engine runs and reports that `candidates.json` is missing, which is
+  still a 503 with no fake route. Until that line changes, `npm test` shows 1
+  failure.
+- **For Adi: make `scienceValue` nullable in `server/contracts.ts`.** The
+  contract forces a number, even when a visited target has no rating. Current
+  workaround: count only rated targets, name the unrated ones in `reasons`, and
+  exclude the route from Science-focused.
+- **For Adi: add `routeMatchToleranceM` (50) to `server/config.ts`.** Until then
+  it's a named constant in `server/candidates.js`.
+- **For Adi: `npm test` could include `tests/*.test.js`** so the route-engine
+  tests run in the build too.
 - **For Zain: there is no `returnDistanceKm` field in the Candidate contract.**
   The brief says outbound and return distances are separate, but only
-  `distanceKm` (outbound) exists. `evaluateRoute` calculates the return distance
-  internally but doesn't output it. Adding it is a contract change, so it needs
+  `distanceKm` (outbound) exists. Adding it is a contract change, so it needs
   Zain's coordination and a brief version update.
-- The 0.70 / 0.30 score weights are named constants in `src/routes.js`. They
-  could move into `src/config.js` if the team wants them tunable there.
-- `coveragePercent` is `null` until Zaid's terrain coverage data is available.
-
-- The brief doesn't name per-segment fields or config keys. We chose
-  `q, speedKmh, driveMinutes, energyKWh, feasibility, reasons` and the key
-  names in `src/config.js`. Zain and Naser need to agree on these.
-- `package.json` is local only until Adi confirms it (needed for `"type": "module"`).
 - Slope should come from an elevation gradient. If we only have rise/run
-  along the route, cross-slope is missed, and that must be labelled.
+  along the route, cross-slope is missed. The engine labels this in `reasons`.
+
+## AI assistance
+
+The route engine code (`server/geo.js`, `server/route-math.js`,
+`server/ranking.js`, `server/candidates.js`, `server/route-engine.js`), its
+tests and fixtures in `tests/`, and these notes were written by **Claude Code
+(Anthropic)** at the direction of Abood (Route Engineer). Abood set the
+requirements, approved each plan before any code was written, decided the open
+design questions (recorded above), and reviewed the code with plain-English
+explanations. All formulas come from the team brief, and the test values were
+checked by hand. To be recorded in the team submission notes as required.

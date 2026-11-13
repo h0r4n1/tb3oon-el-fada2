@@ -1,5 +1,5 @@
-// Tests for evaluateRoute in src/routes.js (milestone 2).
-// Run with: npm test
+// Tests for evaluateRoute in server/route-math.js.
+// Run with: node --test tests/*.test.js
 //
 // Defaults (src/config.js): v0 5 km/h, L 15°, e0 0.5 kWh/km, aux 0.2 kW,
 // time reserve 15 min, battery reserve 2 kWh. Scenario: 120 min remaining,
@@ -9,7 +9,7 @@
 // to ±0.0005. Values that are exact by hand are checked to ±1e-9.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateRoute, FEASIBILITY } from "../src/routes.js";
+import { evaluateRoute, FEASIBILITY } from "../server/route-math.js";
 
 function assertClose(actual, expected, tolerance, label) {
   assert.ok(

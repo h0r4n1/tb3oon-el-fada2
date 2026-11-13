@@ -1,9 +1,11 @@
 // NEBULA - Geometry helpers for Mars (owned by Abood, Route Engineer).
 //
-// Small, reusable math used by the route engine. Plain browser-compatible
-// JavaScript module: no libraries, works in the browser and in Node tests.
+// Small, reusable maths used by the route engine. Runs on the server (Node);
+// it uses no browser features and no libraries.
 
-import { MISSION_CONFIG } from "./config.js";
+// Mission settings (including the Mars radius) live in server/config.ts,
+// owned by the backend team. Node strips the TypeScript types on import.
+import { MISSION_CONFIG } from "./config.ts";
 
 // clamp: keeps a number inside a range.
 // Example: clamp(1.3, 0, 1) -> 1, clamp(-0.2, 0, 1) -> 0, clamp(0.5, 0, 1) -> 0.5.

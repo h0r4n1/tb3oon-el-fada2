@@ -1,0 +1,40 @@
+{
+  "_notice": "SYNTHETIC DEMONSTRATION DATA for automated tests only. Not Mars observations.",
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.033807806173820516,
+          0
+        ]
+      },
+      "properties": {
+        "id": "syn-delta",
+        "name": "Synthetic delta target",
+        "scienceValue": 3,
+        "stopMinutes": 5,
+        "isSynthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0,
+          0.016903903086910258
+        ]
+      },
+      "properties": {
+        "id": "syn-ridge",
+        "name": "Synthetic ridge target",
+        "scienceValue": 2,
+        "stopMinutes": 5,
+        "isSynthetic": true
+      }
+    }
+  ]
+}

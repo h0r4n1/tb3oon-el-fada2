@@ -1,11 +1,11 @@
-// Tests for src/routes.js. Run with: npm test   (or: node --test tests/)
+// Tests for server/route-math.js (evaluateSegment). Run with: node --test tests/*.test.js
 //
 // Every expected value below was calculated by hand from the brief's
 // section 6 formulas with the default config (v0 = 5 km/h, L = 15°,
 // e0 = 0.5 kWh/km). The working is shown in each test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSegment, FEASIBILITY } from "../src/routes.js";
+import { evaluateSegment, FEASIBILITY } from "../server/route-math.js";
 
 const TOL = 1e-9; // tolerance for exact-by-hand values
 

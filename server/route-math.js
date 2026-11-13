@@ -1,11 +1,14 @@
-// NEBULA - Route engine (owned by Abood, Route Engineer).
+// NEBULA - Route maths (owned by Abood, Route Engineer). Runs on the server (Node).
 //
-// Milestone 1: evaluate a single route segment (brief section 6).
-// Later milestones will add whole-route scores, feasibility and the return trip.
+// evaluateSegment: one piece of a route.  evaluateRoute: a whole route,
+// including the trip home, its scores and its pass/blocked/unverified verdict.
+// Formulas are from the team brief, section 6.
 //
 // The UI must never recompute these numbers; it only formats what we return.
 
-import { MISSION_CONFIG } from "./config.js";
+// Mission settings are owned by the backend team in server/config.ts.
+// Node can import a .ts file directly here because it strips the TypeScript types.
+import { MISSION_CONFIG } from "./config.ts";
 import { clamp } from "./geo.js";
 
 // Feasibility labels, using the exact words from the brief (section 7,
@@ -22,7 +25,7 @@ export const FEASIBILITY = Object.freeze({
 //   distanceKm - segment length d_i, in kilometres (must be 0 or more)
 //   slopeDeg   - terrain slope s_i, in degrees (must be 0 or more; it is the
 //                steepness of the ground, so a negative value means bad data)
-//   config     - mission settings (defaults to src/config.js)
+//   config     - mission settings (defaults to server/config.ts)
 //
 // Implements the brief's section 6 per-segment formulas:
 //   q_i = clamp(s_i / L, 0, 1)     "how steep", 0 = flat, 1 = at/over the limit
@@ -69,9 +72,9 @@ export function evaluateSegment(distanceKm, slopeDeg, config = MISSION_CONFIG) {
     };
   }
 
-  const L = config.maxSlopeDeg;
+  const L = config.maxSlopeDegrees;
   const v0 = config.flatSpeedKmh;
-  const e0 = config.baseDriveKWhPerKm;
+  const e0 = config.baselineKWhPerKm;
 
   const q = clamp(slopeDeg / L, 0, 1);
   const speedKmh = v0 / (1 + 2 * q);
@@ -95,12 +98,6 @@ export function evaluateSegment(distanceKm, slopeDeg, config = MISSION_CONFIG) {
 // ---------------------------------------------------------------------------
 // Milestone 2: evaluating a whole route (outbound + return).
 // ---------------------------------------------------------------------------
-
-// Score weights from the brief's section 6 formula C = 0.70 S + 0.30 U.
-// They are part of the agreed scoring formula (not a tunable vehicle default),
-// so they live here with a name rather than as bare numbers in the maths.
-const SAFETY_WEIGHT = 0.7;
-const TIME_WEIGHT = 0.3;
 
 // Tiny tolerance for "is A more than B?" comparisons on decimals.
 // WHY: computers store decimals in binary, so a value like 106.4 may be held
@@ -188,9 +185,10 @@ function evaluateLeg(segments, directionLabel, reasons, config) {
 // Implements brief section 6:
 //   S = 100 [1 − Σ(d·q) / Σd]        terrain score, OUTBOUND segments only
 //   T = outbound drive + stop minutes
-//   H = remainingMinutes − minTimeReserveMinutes
+//   H = remainingMinutes − minimumTimeReserveMinutes
 //   U = 100 · clamp(1 − T/H, 0, 1)    time score
-//   C = 0.70 S + 0.30 U               overall score (full precision)
+//   C = terrainWeight·S + timeWeight·U overall score (0.7 and 0.3 in config;
+//                                     full precision, no rounding)
 //   E = outbound energy + return energy
 //       + auxiliaryKW × (outbound drive + return drive + stop minutes) / 60
 //
@@ -287,11 +285,11 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
   // H = time we may spend, after setting the minimum reserve aside.
   let H = null;
   if (isNonNegativeNumber(remainingMinutes)) {
-    H = remainingMinutes - config.minTimeReserveMinutes;
+    H = remainingMinutes - config.minimumTimeReserveMinutes;
     if (H <= 0) {
       blocked = true;
       reasons.push(
-        `No usable mission time: ${remainingMinutes} min remaining is not more than the ${config.minTimeReserveMinutes} min reserve.`
+        `No usable mission time: ${remainingMinutes} min remaining is not more than the ${config.minimumTimeReserveMinutes} min reserve.`
       );
     }
   }
@@ -299,12 +297,12 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
   // Time feasibility: outbound + stops + return + reserve must fit.
   // Skipped when H <= 0, because that case is already blocked above.
   if (T !== null && knownReturn && H !== null && H > 0) {
-    const neededMinutes = T + ret.driveMinutes + config.minTimeReserveMinutes;
+    const neededMinutes = T + ret.driveMinutes + config.minimumTimeReserveMinutes;
     // "more than, by a meaningful amount": see EPSILON above.
     if (neededMinutes - remainingMinutes > EPSILON) {
       blocked = true;
       reasons.push(
-        `Not enough time: needs ${neededMinutes.toFixed(2)} min including the return trip and ${config.minTimeReserveMinutes} min reserve, ` +
+        `Not enough time: needs ${neededMinutes.toFixed(2)} min including the return trip and ${config.minimumTimeReserveMinutes} min reserve, ` +
           `but only ${remainingMinutes.toFixed(2)} min remain (short by ${(neededMinutes - remainingMinutes).toFixed(2)} min).`
       );
     }
@@ -321,7 +319,9 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
   }
 
   // Battery feasibility: energy used + reserve must not exceed battery now.
-  const batteryReserveKWh = config.batteryReserveFraction * config.batteryCapacityKWh; // 0.2 × 10 = 2 kWh
+  // The config stores the reserve as a PERCENT (20), so divide by 100:
+  // 10 kWh × 20 / 100 = 2 kWh.
+  const batteryReserveKWh = (config.batteryCapacityKWh * config.batteryReservePercent) / 100;
   if (totalEnergyKWh !== null && isNonNegativeNumber(currentBatteryKWh)) {
     const neededKWh = totalEnergyKWh + batteryReserveKWh;
     if (neededKWh - currentBatteryKWh > EPSILON) {
@@ -341,7 +341,10 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
   if (!unverified) {
     // S: only defined if the rover actually drives somewhere (avoid ÷ 0).
     if (outbound.distanceKm > 0) {
-      safetyScore = 100 * (1 - outbound.sumDQ / outbound.distanceKm);
+      // Mathematically S is always between 0 and 100. The clamp only removes
+      // tiny rounding errors (e.g. -0.00000000000002 when every segment is
+      // exactly at the limit), which the team's contract would reject.
+      safetyScore = clamp(100 * (1 - outbound.sumDQ / outbound.distanceKm), 0, 100);
     } else {
       reasons.push("Zero-distance route: terrain score is not applicable; only stop and auxiliary costs apply.");
     }
@@ -353,7 +356,13 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
 
     // C needs both. If either is N/A we do not invent a number.
     if (safetyScore !== null && timeScore !== null) {
-      overallScore = SAFETY_WEIGHT * safetyScore + TIME_WEIGHT * timeScore;
+      // Weights come from server/config.ts (terrainWeight 0.7, timeWeight 0.3).
+      // Clamp again only to absorb rounding, as for S above.
+      overallScore = clamp(
+        config.terrainWeight * safetyScore + config.timeWeight * timeScore,
+        0,
+        100
+      );
     }
   }
 

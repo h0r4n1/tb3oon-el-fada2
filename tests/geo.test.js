@@ -1,7 +1,7 @@
-// Tests for src/geo.js. Run with: npm test   (or: node --test tests/)
+// Tests for server/geo.js. Run with: node --test tests/*.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { haversineDistanceM, clamp, pathDistanceKm } from "../src/geo.js";
+import { haversineDistanceM, clamp, pathDistanceKm } from "../server/geo.js";
 
 // Decimals are not stored exactly in computers, so we compare
 // "close enough" instead of exactly equal.
