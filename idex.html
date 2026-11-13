@@ -1,0 +1,84 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nebula | Mars Mission Planner</title>
+  <link rel="stylesheet" href="styles.css">
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">N</span>
+      <div>
+        <strong>NEBULA</strong>
+        <small>MARS MISSION PLANNER</small>
+      </div>
+    </div>
+    <span class="mission-status">● JEZERO / MAP OPERATIONS</span>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar">
+      <p class="eyebrow">MISSION OVERVIEW</p>
+      <h1>Surface Map</h1>
+      <p class="description">
+        Explore the Jezero region and select coordinates
+        for mission planning.
+      </p>
+
+      <section class="panel">
+        <h2>MAP LAYERS</h2>
+        <label>
+          <input type="checkbox" id="layer-imagery" checked>
+          Mars surface imagery
+        </label>
+        <label>
+          <input type="checkbox" id="layer-coverage" checked>
+          Image coverage boundary
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2>COORDINATE SELECTION</h2>
+        <p class="description">Selected location</p>
+        <div class="coordinate">
+          <span>LATITUDE</span>
+          <strong id="latitude">—</strong>
+        </div>
+        <div class="coordinate">
+          <span>LONGITUDE</span>
+          <strong id="longitude">—</strong>
+        </div>
+        <p id="selection-status">No location selected.</p>
+        <button id="clear-selection">Clear selection</button>
+      </section>
+
+      <section class="panel">
+        <h2>MISSION DATA</h2>
+        <div class="coordinate">
+          <span>REGION</span>
+          <strong>Jezero Crater</strong>
+        </div>
+        <div class="coordinate">
+          <span>PLANET</span>
+          <strong>Mars</strong>
+        </div>
+      </section>
+    </aside>
+
+    <section class="map-area">
+      <div id="map"></div>
+      <div class="map-label">MARS SURFACE / MAP VIEW</div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
