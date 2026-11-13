@@ -1,0 +1,46 @@
+// Tests for src/geo.js. Run with: npm test   (or: node --test tests/)
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { haversineDistanceM, clamp } from "../src/geo.js";
+
+// Decimals are not stored exactly in computers, so we compare
+// "close enough" instead of exactly equal.
+function assertClose(actual, expected, tolerance, label) {
+  assert.ok(
+    Math.abs(actual - expected) <= tolerance,
+    `${label}: expected ${expected}, got ${actual}`
+  );
+}
+
+test("brief fixture: 0.001 radian equatorial arc = 3,389.5 m", () => {
+  // Hand calculation: arc length = R × angle = 3,389,500 × 0.001 = 3,389.5 m.
+  // 0.001 radians converted to degrees = 0.001 × 180 / PI.
+  const lonDeg = (0.001 * 180) / Math.PI;
+  const d = haversineDistanceM({ lat: 0, lon: 0 }, { lat: 0, lon: lonDeg });
+  assertClose(d, 3389.5, 1e-6, "distance (m)");
+});
+
+test("same point is 0 m", () => {
+  assert.equal(haversineDistanceM({ lat: 18.4, lon: 77.5 }, { lat: 18.4, lon: 77.5 }), 0);
+});
+
+test("opposite sides of Mars = half the circumference (clamp keeps it from NaN)", () => {
+  // Hand calculation: PI × R = 3.14159... × 3,389,500 ≈ 10,648,433 m.
+  const d = haversineDistanceM({ lat: 0, lon: 0 }, { lat: 0, lon: 180 });
+  assertClose(d, Math.PI * 3389500, 1e-3, "distance (m)");
+});
+
+test("missing or invalid points return null, never 0", () => {
+  const ok = { lat: 0, lon: 0 };
+  assert.equal(haversineDistanceM(null, ok), null);
+  assert.equal(haversineDistanceM(ok, { lat: null, lon: 0 }), null);
+  assert.equal(haversineDistanceM(ok, { lat: 0 }), null);
+  assert.equal(haversineDistanceM(ok, { lat: 95, lon: 0 }), null);
+  assert.equal(haversineDistanceM(ok, { lat: "1", lon: 0 }), null);
+});
+
+test("clamp keeps values in range", () => {
+  assert.equal(clamp(1.3, 0, 1), 1);
+  assert.equal(clamp(-0.2, 0, 1), 0);
+  assert.equal(clamp(0.5, 0, 1), 0.5);
+});
