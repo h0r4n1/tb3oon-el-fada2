@@ -1,0 +1,89 @@
+# Backend handoff
+
+Adi owns TypeScript API handlers and integration. Abood owns the JavaScript route
+engine. Zoubi owns the plain HTML/CSS/JavaScript frontend. The data teammate owns
+`data/` and Python preparation under `scripts/`.
+
+## Abood
+
+Replace the placeholder in `server/route-engine.js`, preserving this export:
+
+```js
+export async function planRoutes(request) {
+  // Return { requestId, dataVersion, candidates, errors }.
+}
+```
+
+This runs on Node, so do not use `window`, `document`, browser storage or Leaflet.
+Use `loadJsonData` from `./data.ts` for server-side JSON. TypeScript types and the
+runtime schemas are in `server/contracts.ts`; request/result field names follow
+the team brief. `errors` is initially an array of readable strings. Candidate
+geometries use [longitude, latitude], while coordinate objects use {lat, lon}.
+
+The API validates input, region/version, coverage, base and result shape. Abood
+still owns every route calculation, terrain/stop validation, return feasibility,
+reserve check, unknown-data classification, ranking and score. Shape validation
+does not establish that a route is feasible. Do not replace missing terrain with
+zero or report an unverified route as pass.
+
+Mission config keys and proposed values are in `server/config.ts`. The backend
+supplies this config; client overrides are ignored. These are prototype
+assumptions, not validated rover limits. Remaining time and battery are supplied
+by the browser's simulated mission state; this is not a trusted telemetry system.
+
+## Frontend
+
+Use relative URLs so frontend and API share the same deployed origin:
+
+```js
+const regionResponse = await fetch('/api/region');
+const region = await regionResponse.json();
+if (!regionResponse.ok) throw new Error(region.error.message);
+
+const response = await fetch('/api/routes', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    requestId: crypto.randomUUID(),
+    regionId: region.id,
+    dataVersion: region.dataVersion,
+    origin: region.base,
+    stopIds: [],
+    destination: selectedDestination, // {lat, lon}, inside real coverage
+    base: region.base,
+    remainingMinutes: 120,
+    currentBatteryKWh: 10
+  })
+});
+const result = await response.json();
+if (!response.ok) throw new Error(result.error.message);
+```
+
+Replace initial budgets with current simulation budgets during replanning. Only
+accept responses matching the latest requestId/dataVersion. `GET /api/config`
+exposes the current assumptions. `GET /api/health` means the API process is alive;
+it does not mean the engine or datasets are ready.
+
+Until integration, missing data returns 503 DATA_NOT_READY; after region data is
+supplied, the placeholder planner returns 503 ENGINE_NOT_READY. No fake route is
+returned. Bad JSON/input returns 400, wrong content type 415, oversized requests
+413, wrong methods 405, stale region data 409, and out-of-coverage/base errors 422.
+API errors have `{requestId?, error: {code, message, details?}}`.
+
+## Vercel (not deployed yet)
+
+Import the repository as one project with the repository root as Root Directory,
+Framework Preset Other, Node 24.x, build command `npm run build`, and output
+directory `dist`. `vercel.json` records the build configuration and includes
+`data/` in the relevant function bundles. API handlers are in root `api/`.
+
+The static build copies frontend assets only. It currently maps the existing
+`idex.html` to `dist/index.html`; a future source `index.html` takes precedence.
+Keep server code in `server/`, never `src/` or `public/`.
+
+Sources: https://vercel.com/docs/functions/runtimes/node-js and
+https://www.typescriptlang.org/tsconfig/allowJs.html .
+
+AI assistance: the initial backend scaffold, validation, build support and tests
+were generated with Codex. Record subsequent human/AI contributions in the team
+submission notes.
