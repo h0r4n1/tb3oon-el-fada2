@@ -33,3 +33,35 @@ by an arbitrary filename endpoint.
 The original 3D source files remain at the root of `data/`. Run
 `python scripts/make_map_layers.py` to regenerate the 2D map layers under
 `data/map-layers/`; elevation remains in feature properties.
+
+## Data provenance and cleaning
+
+Source files, downloaded 2026-11-13 by `scripts/fetch_rover_path.py`:
+- `rover_path.geojson` - https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_traverse.json
+- `waypoints.geojson` - https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json
+
+Mission: Mars 2020 (Perseverance). Coordinates are lon/lat degrees, east-positive.
+Vertical datum and units: UNVERIFIED. Values are consistent with metres and the
+field is named `elev_geoid`, but no NASA documentation has been checked.
+
+### Prepared files
+The 2D map layers are written to `data/map-layers/`. The 3D source files, `region.json` and `waypoints_slims.geojson` stay at the root of `data/`.
+
+- `region.json` - `scripts/make_region.py`
+- `waypoints_slims.geojson` - `scripts/prepare_waypoints.py` (3D, deprecated)
+- `rover_path_2d.geojson`, `waypoints_2d.geojson` - `scripts/make_map_layers.py`
+  then `scripts/clean_data.py`
+
+### Cleaning applied (`scripts/clean_data.py`)
+1. Traverse elevations: 15 vertices in feature 181 (sol 668, RMC 32_482 to 32_580)
+   held the repeated value 2.200000017e-05, discontinuous with the surrounding
+   range of -2586.5 to -1786.0 m. Set to null. Whether NASA documents this as a
+   no-data marker is UNVERIFIED; it is treated as missing on the evidence of the
+   data alone.
+2. `dist_total_m`: set to null on 154 waypoints whose `Note` is
+   "Mid-drive localization" (132) or "Interpolated" (22), where the value was 0.
+   These are read as "not recorded".
+   EXCEPTION: sol 13 (`Note` = "Site increment, no motion.") keeps
+   `dist_total_m = 0`. It is the start waypoint and the zero is a real measurement.
+
+Missing values are null, never 0.
