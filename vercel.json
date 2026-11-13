@@ -6,6 +6,6 @@
   "functions": {
     "api/region.ts": { "includeFiles": "data/**" },
     "api/routes.ts": { "includeFiles": "data/**" },
-    "api/map-data/*.ts": { "includeFiles": "data/**" }
+    "api/map-data/*.ts": { "includeFiles": "data/map-layers/**" }
   }
 }

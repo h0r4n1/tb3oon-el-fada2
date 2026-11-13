@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { ApiError } from "./errors.ts";
 import { regionSchema, type Region } from "./contracts.ts";
 
-// Abood can use this for elevation.json, candidates.json and targets.geojson.
+// Root datasets plus the dedicated public map-layer folder; no arbitrary paths.
 export async function loadJsonData(filename: string): Promise<unknown> {
-  if (!/^[a-z0-9][a-z0-9_-]*\.(json|geojson)$/i.test(filename)) {
-    throw new ApiError(400, "INVALID_DATA_FILE", "Use a JSON filename inside data/.");
+  if (!/^(?:map-layers\/)?[a-z0-9][a-z0-9_-]*\.(json|geojson)$/i.test(filename)) {
+    throw new ApiError(400, "INVALID_DATA_FILE", "Use a JSON filename inside data/ or data/map-layers/.");
   }
   let text: string;
   try {

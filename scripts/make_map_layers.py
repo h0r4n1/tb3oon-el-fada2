@@ -1,6 +1,8 @@
 import json
 import pathlib
 Data= pathlib.Path(__file__).resolve().parent.parent / "data"
+MAP_LAYERS = Data / "map-layers"
+MAP_LAYERS.mkdir(parents=True, exist_ok=True)
 
 def strip_z_linestring(feature):
     coords =feature["geometry"]["coordinates"]
@@ -31,7 +33,7 @@ for src, dst, fn in [
 ]:
     gj = json.loads((Data / src).read_text(encoding="utf-8"))
     out = {"type": "FeatureCollection", "features": [fn(f) for f in gj["features"]]}
-    path = Data / dst
+    path = MAP_LAYERS / dst
     path.write_text(json.dumps(out), encoding="utf-8")
 
 

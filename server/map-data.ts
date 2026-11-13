@@ -3,15 +3,15 @@ import { loadJsonData } from "./data.ts";
 import { ApiError } from "./errors.ts";
 
 export const MAP_DATA_FILES = {
-  waypoints: "waypoints_slims.geojson",
-  "rover-path": "rover_path.geojson"
+  waypoints: "map-layers/waypoints_2d.geojson",
+  "rover-path": "map-layers/rover_path_2d.geojson"
 } as const;
 export type MapDataLayer = keyof typeof MAP_DATA_FILES;
 
-// Check the structures used by these two layers; preserve source properties,
-// optional altitude coordinates, CRS metadata and other foreign members.
+// Serve the generated 2D map layers without dropping elevation properties,
+// CRS metadata or other foreign members. Source 3D datasets are not a fallback.
 // This does not verify the dataset's planetary reference frame or provenance.
-const position = z.array(z.number().finite()).min(2);
+const position = z.array(z.number().finite()).length(2);
 const properties = z.record(z.string(), z.unknown()).nullable();
 const waypointsSchema = z.looseObject({
   type: z.literal("FeatureCollection"),
