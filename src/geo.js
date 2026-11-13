@@ -72,3 +72,52 @@ export function haversineDistanceM(pointA, pointB, config = MISSION_CONFIG) {
 
   return 2 * R * Math.atan2(Math.sqrt(safeA), Math.sqrt(1 - safeA));
 }
+
+// pathDistanceKm: total length, in KILOMETRES, of a line drawn through a list
+// of points (a "polyline"), e.g. a candidate route from Zaid's data.
+//
+// WHY THE ORDER IS [lon, lat] HERE:
+// Route geometry arrives in GeoJSON format (brief section 7, Candidate
+// .geometry: [[lon, lat]]). GeoJSON follows the maths convention (x, y),
+// where x = east-west = longitude and y = north-south = latitude, so
+// longitude comes FIRST. Leaflet does the opposite ([lat, lon]). Mixing these
+// up silently puts points in the wrong place, so inside our own code we use
+// NAMED fields {lat, lon} (brief section 5). Names can't be swapped by accident.
+//
+// HOW IT WORKS: convert every [lon, lat] pair into {lat, lon}, measure each
+// neighbouring pair with haversineDistanceM (metres), add them up, and
+// convert metres -> km by dividing by 1000. This is the ONLY place in the
+// route engine that converts metres to km, to avoid unit-conversion bugs.
+//
+// Inputs: geometry - an array like [[lon, lat], [lon, lat], ...].
+//         A third number (altitude) is allowed by GeoJSON and is ignored.
+// Returns: km as a number; 0 for a single point; null if the geometry is not
+//          a list, is empty, or contains any invalid point.
+export function pathDistanceKm(geometry, config = MISSION_CONFIG) {
+  if (!Array.isArray(geometry) || geometry.length === 0) {
+    return null;
+  }
+
+  // Step 1: convert GeoJSON pairs into named {lat, lon} points.
+  const points = [];
+  for (const pair of geometry) {
+    if (!Array.isArray(pair) || pair.length < 2) {
+      return null;
+    }
+    const point = { lat: pair[1], lon: pair[0] }; // index 1 = lat, index 0 = lon
+    if (!isValidPoint(point)) {
+      return null; // one bad point makes the whole length unknown
+    }
+    points.push(point);
+  }
+
+  // Step 2: add up the distance between each point and the next one.
+  // (A single point has no neighbours, so the total stays 0.)
+  let totalMetres = 0;
+  for (let i = 1; i < points.length; i++) {
+    totalMetres += haversineDistanceM(points[i - 1], points[i], config);
+  }
+
+  // Step 3: the one and only metres -> kilometres conversion.
+  return totalMetres / 1000;
+}

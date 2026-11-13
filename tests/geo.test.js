@@ -1,7 +1,7 @@
 // Tests for src/geo.js. Run with: npm test   (or: node --test tests/)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { haversineDistanceM, clamp } from "../src/geo.js";
+import { haversineDistanceM, clamp, pathDistanceKm } from "../src/geo.js";
 
 // Decimals are not stored exactly in computers, so we compare
 // "close enough" instead of exactly equal.
@@ -43,4 +43,32 @@ test("clamp keeps values in range", () => {
   assert.equal(clamp(1.3, 0, 1), 1);
   assert.equal(clamp(-0.2, 0, 1), 0);
   assert.equal(clamp(0.5, 0, 1), 0.5);
+});
+
+// ---------------- Milestone 2: pathDistanceKm ----------------
+
+test("pathDistanceKm: 0.001 rad equatorial polyline = 3.3895 km", () => {
+  // GeoJSON order is [lon, lat]. 3,389.5 m ÷ 1000 = 3.3895 km.
+  const lonDeg = (0.001 * 180) / Math.PI;
+  assertClose(pathDistanceKm([[0, 0], [lonDeg, 0]]), 3.3895, 1e-9, "km");
+});
+
+test("pathDistanceKm: adds up several pieces", () => {
+  // Two 0.001 rad steps along the equator = 2 × 3.3895 = 6.779 km.
+  const step = (0.001 * 180) / Math.PI;
+  assertClose(pathDistanceKm([[0, 0], [step, 0], [2 * step, 0]]), 6.779, 1e-9, "km");
+});
+
+test("pathDistanceKm: invalid point, empty list or non-list -> null", () => {
+  assert.equal(pathDistanceKm([[0, 0], [null, 0]]), null);
+  assert.equal(pathDistanceKm([[0, 0], [0, 95]]), null); // latitude 95 is impossible
+  assert.equal(pathDistanceKm([[0, 0], [5]]), null); // pair missing a value
+  assert.equal(pathDistanceKm([]), null);
+  assert.equal(pathDistanceKm(null), null);
+});
+
+test("pathDistanceKm: a single point is 0 km; altitude values are ignored", () => {
+  assert.equal(pathDistanceKm([[77.5, 18.4]]), 0);
+  const lonDeg = (0.001 * 180) / Math.PI;
+  assertClose(pathDistanceKm([[0, 0, -2500], [lonDeg, 0, -2400]]), 3.3895, 1e-9, "km");
 });
