@@ -34,9 +34,13 @@ npm.cmd run build
 | `GET /api/config` | Disclosed prototype simulation assumptions |
 | `GET /api/region` | Validated `data/region.json` |
 | `POST /api/routes` | Validate request and call Abood's engine |
+| `GET /api/map-data/waypoints` | Point FeatureCollection from `data/waypoints_slims.geojson` |
+| `GET /api/map-data/rover-path` | LineString FeatureCollection from `data/rover_path.geojson` |
 
-The initial scaffold deliberately returns **503** for absent region data or the
-unimplemented route engine. It does not fabricate NASA data or route results.
+The API returns **503** for missing/invalid datasets or the unimplemented route
+engine. Map-data endpoints are independent of region and route-engine readiness.
+They return GeoJSON directly, with source properties and coordinates preserved.
+The API does not fabricate NASA data or route results.
 Tests use synthetic fixtures isolated under `tests/`.
 
 See [backend-handoff.md](docs/backend-handoff.md) for request fields, ownership,
