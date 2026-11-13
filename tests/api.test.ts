@@ -107,7 +107,7 @@ test("absent data and unimplemented engine return 503 without fake candidates", 
   const missingEngine = createApp({ regionLoader: async () => region });
   const engineResponse = await missingEngine(request());
   assert.equal(engineResponse.status, 503);
-  assert.equal(await errorCode(engineResponse), "ENGINE_NOT_READY");
+  assert.equal(await errorCode(engineResponse), "DATA_NOT_READY");
 });
 
 test("invalid or stale engine output is rejected", async () => {
