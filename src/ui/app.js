@@ -31,16 +31,22 @@ $('enter').onclick=()=>{scene='setup';$('intro').hidden=true;$('setup').hidden=f
 function frame(now){let dt=Math.min((now-last)/1000,.05);last=now;let t=now/1000;if(scene==='orbit'||scene==='setup')orbit(t);else{if(scene==='descent'){transition=Math.min(1,(now-descentStarted)/4000);if(transition===1){scene='surface';$('descent').hidden=true;$('hud').hidden=false;notify('Surface link established. Open MISSION to choose your route.')}}if(turnStarted){let fraction=Math.min(1,(now-turnStarted)/2200);cameraYaw=Math.PI*(fraction*fraction*(3-2*fraction));if(fraction===1)turnStarted=0}if(running&&!turnStarted){travel=Math.max(0,Math.min(tripEnd(),travel+dt*18*(returning?-1:1)));time+=dt*.45;if(returning?travel<=0:travel>=tripEnd()){running=false;finished=true;$('instruction').textContent='Destination reached';$('arrow').textContent='✓';$('turnDistance').textContent=returning?'Welcome home':$('sectorTitle').textContent;$('next').textContent='Rover stopped. Mission control standing by.'}}surface(t);update()}requestAnimationFrame(frame)}cards();requestAnimationFrame(frame);
 
 let selectedPoint = null;
+let selectedTarget = null;
+let listedTargets = new Map();
+let targetCatalogAvailable = false;
+let routeCheckPending = false;
 
 function showBriefing(geographic) {
   $('briefTitle').textContent = geographic ? 'Check this destination' : 'Compare routes';
-  $('briefTarget').textContent = selectedPoint ? formatPoint(selectedPoint) : 'Mission destination';
+  $('briefTarget').textContent = geographic && selectedTarget ? selectedTarget.name : 'Mission destination';
+  if (geographic) showRouteDirection(false);
   $('geographicBriefing').hidden = !geographic;
   $('simulationBriefing').hidden = geographic;
   $('planner').showModal();
 }
 
 $('brief').onclick = () => {
+  if (!selectedTarget) return;
   if (!$('callsign').value.trim()) {
     $('callsign').focus();
     notify('Enter a crew callsign first.');
@@ -52,6 +58,8 @@ $('backOrbit').onclick=()=>{scene='orbit';$('setup').hidden=true;$('intro').hidd
 
 function overview() {
   selectedPoint = null;
+  selectedTarget = null;
+  refreshRouteControls();
   $('sectorPanel').classList.remove('revealed');
   $('atlasFocusLabel').textContent = 'SELECT A WAYPOINT';
   $('waypointSelect').value = '';
@@ -66,11 +74,162 @@ $('atlasZoomIn').onclick = () => marsMap?.zoomIn();
 $('atlasZoomOut').onclick = () => marsMap?.zoomOut();
 
 function tripEnd(){return (routes[chosen].time+(detour?8:0))*40}
-const api=createApiClient();let backendRegion=null,backendConfig=null,marsMap=null,mapMounting=false;
+const api = createApiClient();
+let backendRegion = null;
+let backendConfig = null;
+let marsMap = null;
+let mapMounting = false;
 overview();
-async function loadBackend(){ $('apiStatus').textContent='Loading backend configuration and region…';$('requestRoute').disabled=true;try{const config=await api.getConfig();backendConfig=config.config;backendRegion=await api.getRegion();$('apiStatus').textContent=`${backendRegion.name} · data ${backendRegion.dataVersion} · ${backendRegion.status}. Review the destination coordinates below.`;$('requestRoute').disabled=backendRegion.status!=='demo';await prepareRealMap()}catch(error){backendRegion=null;$('apiStatus').textContent=`Backend unavailable: ${error.code}: ${error.message}`;if(!marsMap)$('mapLoading').textContent='Jezero map unavailable. '+error.message}}
-$('retryApi').onclick=loadBackend;
-$('requestRoute').onclick=async()=>{if(!backendRegion||!backendConfig)return;if(!selectedPoint)return;const destination=selectedPoint;$('requestRoute').disabled=true;$('apiResults').textContent='Evaluating route…';try{const result=await api.planRoutes({requestId:crypto.randomUUID(),regionId:backendRegion.id,dataVersion:backendRegion.dataVersion,origin:backendRegion.base,base:backendRegion.base,destination,stopIds:[],remainingMinutes:backendConfig.missionDurationMinutes,currentBatteryKWh:backendConfig.batteryCapacityKWh*backendConfig.startChargePercent/100});if(!result)return;$('apiResults').replaceChildren();for(const candidate of result.candidates){const p=document.createElement('p');p.textContent=`${candidate.id}: ${candidate.feasibility} · overall ${candidate.overallScore??'unknown'} · ${candidate.driveMinutes??'unknown'} min · ${candidate.reasons.join('; ')}`;$('apiResults').append(p)}if(!result.candidates.length)$('apiResults').textContent='No route candidates returned. '+result.errors.join('; ')}catch(error){$('apiResults').textContent=`${error.code}: ${error.message}`}finally{$('requestRoute').disabled=false}};loadBackend();
+
+function refreshRouteControls() {
+  const canCheck = Boolean(selectedTarget && backendRegion?.status === 'demo' && backendConfig);
+  $('brief').disabled = !canCheck;
+  $('requestRoute').disabled = !canCheck || routeCheckPending;
+  $('requestReturn').disabled = !canCheck || routeCheckPending;
+}
+
+async function loadTargets() {
+  const response = await fetch('/map-data/targets.geojson');
+  if (!response.ok) throw new Error('Science target catalog unavailable.');
+  const catalog = await response.json();
+  if (catalog.type !== 'FeatureCollection' || !Array.isArray(catalog.features)) {
+    throw new Error('Invalid science target catalog.');
+  }
+  return new Map(catalog.features.map(({geometry, properties}) => {
+    const [lon, lat] = geometry.coordinates;
+    return [properties.id, {...properties, point: {lat, lon}}];
+  }));
+}
+
+async function loadBackend() {
+  $('apiStatus').textContent = 'Loading mission configuration…';
+  backendConfig = null;
+  refreshRouteControls();
+  try {
+    const [config, region] = await Promise.all([api.getConfig(), api.getRegion()]);
+    backendConfig = config.config;
+    backendRegion = region;
+    $('apiStatus').textContent = `${region.name} · Data ${region.dataVersion}`;
+    try {
+      listedTargets = await loadTargets();
+      targetCatalogAvailable = true;
+      const selectedId = $('waypointSelect').value;
+      if (selectedPoint) {
+        selectedTarget = listedTargets.get(selectedId) ?? null;
+        showTargetStatus();
+      }
+    } catch {
+      listedTargets.clear();
+      selectedTarget = null;
+      targetCatalogAvailable = false;
+      if (selectedPoint) showTargetStatus();
+    }
+    await prepareRealMap();
+  } catch (error) {
+    backendRegion = null;
+    $('apiStatus').textContent = `Backend unavailable: ${error.message}`;
+    if (!marsMap) $('mapLoading').textContent = 'Jezero map unavailable. ' + error.message;
+  } finally {
+    refreshRouteControls();
+  }
+}
+
+function showRouteDirection(returningToBase) {
+  const destination = returningToBase ? backendRegion.base : selectedTarget.point;
+  $('apiLat').value = String(destination.lat);
+  $('apiLon').value = String(destination.lon);
+  const direction = returningToBase
+    ? `${selectedTarget.name} → ${backendRegion.base.label}`
+    : `${backendRegion.base.label} → ${selectedTarget.name}`;
+  $('routeDirection').textContent = direction + ' · Starting mission budget';
+}
+
+const rolePrefixes = ['Recommended', 'Fastest', 'Science-focused'];
+const detourPrefix = 'Optional science detour:';
+
+function renderCandidate(candidate) {
+  const card = document.createElement('article');
+  card.className = 'route route-result';
+  const title = document.createElement('strong');
+  title.textContent = candidate.id;
+  card.append(title);
+
+  const reasons = candidate.reasons;
+  const roles = rolePrefixes.filter(role => reasons.some(reason => reason.startsWith(role + ':')));
+  const detour = reasons.find(reason => reason.startsWith(detourPrefix));
+  const detourId = /\+detour-(.+)$/.exec(candidate.id)?.[1];
+  const badges = document.createElement('div');
+  badges.className = 'route-result-badges';
+  for (const label of [...roles, ...(detour || detourId ? ['Optional science detour'] : [])]) {
+    const badge = document.createElement('span');
+    badge.textContent = label;
+    badges.append(badge);
+  }
+  if (badges.childElementCount) card.append(badges);
+
+  if (detourId) {
+    const target = document.createElement('p');
+    target.textContent = 'Detour stop: ' + (listedTargets.get(detourId)?.name ?? detourId);
+    card.append(target);
+  }
+  const metrics = document.createElement('p');
+  metrics.textContent = `${candidate.feasibility} · Score ${candidate.overallScore ?? 'unavailable'} · Drive ${candidate.driveMinutes ?? 'unavailable'} min`;
+  card.append(metrics);
+
+  if (reasons.length) {
+    const explanation = document.createElement('ul');
+    for (const reason of reasons) {
+      const item = document.createElement('li');
+      item.textContent = reason;
+      explanation.append(item);
+    }
+    card.append(explanation);
+  }
+  return card;
+}
+
+async function checkRoute(returningToBase) {
+  if (!selectedTarget || !backendConfig || backendRegion?.status !== 'demo' || routeCheckPending) return;
+  const {point} = selectedTarget;
+  const {base, id: regionId, dataVersion} = backendRegion;
+  const {missionDurationMinutes, batteryCapacityKWh, startChargePercent} = backendConfig;
+  routeCheckPending = true;
+  refreshRouteControls();
+  showRouteDirection(returningToBase);
+  $('apiResults').textContent = returningToBase ? 'Checking return to base…' : 'Evaluating outbound routes…';
+  try {
+    const result = await api.planRoutes({
+      requestId: crypto.randomUUID(),
+      regionId,
+      dataVersion,
+      origin: returningToBase ? point : base,
+      base,
+      destination: returningToBase ? base : point,
+      stopIds: [],
+      remainingMinutes: missionDurationMinutes,
+      currentBatteryKWh: batteryCapacityKWh * startChargePercent / 100
+    });
+    if (!result || selectedTarget?.point !== point) return;
+    $('apiResults').replaceChildren();
+    for (const candidate of result.candidates) $('apiResults').append(renderCandidate(candidate));
+    for (const message of result.errors) {
+      const notice = document.createElement('p');
+      notice.textContent = message;
+      $('apiResults').append(notice);
+    }
+    if (!$('apiResults').childElementCount) $('apiResults').textContent = 'No matching routes were returned.';
+  } catch (error) {
+    if (selectedTarget?.point === point) $('apiResults').textContent = error.message;
+  } finally {
+    routeCheckPending = false;
+    refreshRouteControls();
+  }
+}
+
+$('retryApi').onclick = loadBackend;
+$('requestRoute').onclick = () => checkRoute(false);
+$('requestReturn').onclick = () => checkRoute(true);
+loadBackend();
 
 async function prepareRealMap() {
   if (marsMap || mapMounting) return;
@@ -170,11 +329,20 @@ function renderWaypointRecord(properties) {
     : '';
 }
 
+function showTargetStatus() {
+  $('waypointRouteStatus').textContent = selectedTarget
+    ? `${selectedTarget.name} · ${selectedTarget.stopMinutes} min science stop`
+    : targetCatalogAvailable
+      ? 'Route checks are available for listed science targets.'
+      : 'Science target catalog unavailable.';
+  refreshRouteControls();
+}
+
 function selectGeographicPoint(point, properties) {
   if (!properties?.RMC) return;
   selectedPoint = point;
-  $('apiLat').value = String(point.lat);
-  $('apiLon').value = String(point.lon);
+  selectedTarget = listedTargets.get(properties.RMC) ?? null;
+  showTargetStatus();
   $('apiResults').replaceChildren();
   $('sectorPanel').classList.add('revealed');
   $('sectorPanel').scrollTop = 0;

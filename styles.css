@@ -231,3 +231,38 @@
     width: min(87vw, 48vh);
   }
 }
+
+#waypointRouteStatus {
+  color: #a9c1c4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.route-request-actions,
+.route-result-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-result {
+  display: block;
+  margin: 10px 0;
+}
+
+.route-result-badges {
+  margin-top: 8px;
+}
+
+.route-result-badges span {
+  border: 1px solid #a1eeee70;
+  border-radius: 5px;
+  padding: 4px 7px;
+  color: #c3ebe3;
+}
+
+.route-result ul {
+  padding-left: 18px;
+  color: #adc7be;
+  line-height: 1.5;
+}
