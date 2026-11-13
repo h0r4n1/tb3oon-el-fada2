@@ -46,5 +46,5 @@ print(f"lat: {min(lats):.5f} to {max(lats):.5f}")
 print(f"lon: {min(lons):.5f} to {max(lons):.5f}")
 print(f"elevation: {min(elevs):.1f} to {max(elevs):.1f} m")
 
-distances= [f["properties"]["distance_total_m"] for f in slim if f["properties"]["distance_total_m"]]
+distances = [f["properties"]["dist_total_m"] for f in slim if f["properties"]["dist_total_m"]]
 print(f"total traverse: {max(distances)/1000:.2f} km")
