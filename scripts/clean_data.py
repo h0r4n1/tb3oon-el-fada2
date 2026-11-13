@@ -1,13 +1,14 @@
 import json, pathlib
 from collections import Counter
 DATA = pathlib.Path(__file__).resolve().parent.parent / "data"
+LAYERS = DATA / "map-layers"
 ELEV_INVALID_ABOVE = -100.0
 
 
 
 
 
-rp = json.loads((DATA / "rover_path_2d.geojson").read_text(encoding="utf-8"))
+rp = json.loads((LAYERS / "rover_path_2d.geojson").read_text(encoding="utf-8"))
 bad_total, affected = 0, []
 for i, f in enumerate(rp["features"]):
     elevs = f["properties"].get("elevations") or []
@@ -36,7 +37,7 @@ print(f"  remaining range: {min(valid):.1f} to {max(valid):.1f} m "
 
 
 
-wp = json.loads((DATA / "waypoints_2d.geojson").read_text(encoding="utf-8"))
+wp = json.loads((LAYERS / "waypoints_2d.geojson").read_text(encoding="utf-8"))
 
 print("\nNOTE vs dist_total_m == 0:")
 cross = Counter()
@@ -75,6 +76,6 @@ print(f"  waypoints still at exactly 0: sols {still_zero}")
 
 
 
-(DATA / "rover_path_2d.geojson").write_text(json.dumps(rp), encoding="utf-8")
-(DATA / "waypoints_2d.geojson").write_text(json.dumps(wp), encoding="utf-8")
+(LAYERS / "rover_path_2d.geojson").write_text(json.dumps(rp), encoding="utf-8")
+(LAYERS / "waypoints_2d.geojson").write_text(json.dumps(wp), encoding="utf-8")
 print("\nwritten: rover_path_2d.geojson, waypoints_2d.geojson")

@@ -45,9 +45,7 @@ Vertical datum and units: UNVERIFIED. Values are consistent with metres and the
 field is named `elev_geoid`, but no NASA documentation has been checked.
 
 ### Prepared files
-NOTE: these files are currently at the root of `data/` (e.g. `data/rover_path_2d.geojson`).
-The endpoint section above refers to `map-layers/...`. If a `data/map-layers/`
-subfolder is intended, say so and I will move them and update the scripts.
+The 2D map layers are written to `data/map-layers/`. The 3D source files, `region.json` and `waypoints_slims.geojson` stay at the root of `data/`.
 
 - `region.json` - `scripts/make_region.py`
 - `waypoints_slims.geojson` - `scripts/prepare_waypoints.py` (3D, deprecated)
