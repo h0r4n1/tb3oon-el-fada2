@@ -104,7 +104,13 @@ test("absent data and unimplemented engine return 503 without fake candidates", 
   const dataResponse = await missingData(request());
   assert.equal(dataResponse.status, 503);
   assert.equal(await errorCode(dataResponse), "DATA_NOT_READY");
-  const missingEngine = createApp({ regionLoader: async () => region });
+  // Keep this transport test independent of the real engine's integration state.
+  const missingEngine = createApp({
+    regionLoader: async () => region,
+    planner: async () => {
+      throw new ApiError(503, "ENGINE_NOT_READY", "Synthetic unavailable engine.");
+    }
+  });
   const engineResponse = await missingEngine(request());
   assert.equal(engineResponse.status, 503);
   assert.equal(await errorCode(engineResponse), "ENGINE_NOT_READY");
