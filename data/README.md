@@ -24,8 +24,12 @@ Use null for unknown measurements. Include provenance and version changes.
 Prepared data stays in this directory; put Python preparation code in `scripts/`.
 Large raw source downloads should stay outside the repo.
 
-Read-only map endpoints now expose `waypoints_slims.geojson` as
-`GET /api/map-data/waypoints` and `rover_path.geojson` as
+Read-only map endpoints expose `map-layers/waypoints_2d.geojson` as
+`GET /api/map-data/waypoints` and `map-layers/rover_path_2d.geojson` as
 `GET /api/map-data/rover-path`. Preserve those filenames unless the endpoint
 mapping is updated together with the data handoff. Other files are not exposed
 by an arbitrary filename endpoint.
+
+The original 3D source files remain at the root of `data/`. Run
+`python scripts/make_map_layers.py` to regenerate the 2D map layers under
+`data/map-layers/`; elevation remains in feature properties.

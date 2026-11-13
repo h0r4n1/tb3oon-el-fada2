@@ -77,13 +77,15 @@ wrapper:
 
 | Endpoint | Source file | Geometry |
 | --- | --- | --- |
-| `GET /api/map-data/waypoints` | `data/waypoints_slims.geojson` | Point FeatureCollection |
-| `GET /api/map-data/rover-path` | `data/rover_path.geojson` | LineString FeatureCollection |
+| `GET /api/map-data/waypoints` | `data/map-layers/waypoints_2d.geojson` | 2D Point FeatureCollection |
+| `GET /api/map-data/rover-path` | `data/map-layers/rover_path_2d.geojson` | 2D LineString FeatureCollection |
 
-Both responses use `Content-Type: application/geo+json`. Original coordinates,
-altitude values, feature properties and root metadata are preserved. The backend
-checks the expected collection/geometry structures, without reprojecting the
-data or verifying planetary reference frames. Coordinate/provenance validation
+Both responses use `Content-Type: application/geo+json` and contain GeoJSON
+directly, without an envelope. The generated 2D coordinates, feature properties
+(including `elev_geoid` and `elevations`) and any root metadata are preserved.
+The backend checks the expected collection/geometry structures and requires
+exactly two values per position, without reprojecting the data or verifying
+planetary reference frames. Coordinate/provenance validation
 remains a joint map/data task. A rover traverse is source mission data, not a
 computed crewed-rover route or a verified terrain-safety result.
 
@@ -112,7 +114,9 @@ Use the map module's own styling, layer toggles and error states. Relative paths
 assume frontend/API share an origin; use the combined local server or a dev proxy
 when testing from a different frontend server. No cross-origin policy has been
 added. Vercel wrappers are under `api/map-data/`, and `vercel.json` includes the
-datasets in those function bundles.
+`data/map-layers/**` in those function bundles. Run
+`python scripts/make_map_layers.py` to regenerate the two files in that folder.
+Missing 2D files return 503; the API does not fall back to original 3D datasets.
 
 ## Vercel (deployment status must be verified in the account)
 

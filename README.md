@@ -34,12 +34,14 @@ npm.cmd run build
 | `GET /api/config` | Disclosed prototype simulation assumptions |
 | `GET /api/region` | Validated `data/region.json` |
 | `POST /api/routes` | Validate request and call Abood's engine |
-| `GET /api/map-data/waypoints` | Point FeatureCollection from `data/waypoints_slims.geojson` |
-| `GET /api/map-data/rover-path` | LineString FeatureCollection from `data/rover_path.geojson` |
+| `GET /api/map-data/waypoints` | 2D Point FeatureCollection from `data/map-layers/waypoints_2d.geojson` |
+| `GET /api/map-data/rover-path` | 2D LineString FeatureCollection from `data/map-layers/rover_path_2d.geojson` |
 
 The API returns **503** for missing/invalid datasets or the unimplemented route
 engine. Map-data endpoints are independent of region and route-engine readiness.
-They return GeoJSON directly, with source properties and coordinates preserved.
+They return GeoJSON directly, with 2D coordinates and elevation properties
+preserved. Run `python scripts/make_map_layers.py` to regenerate the map layers
+under `data/map-layers/`; original 3D datasets remain in `data/`.
 The API does not fabricate NASA data or route results.
 Tests use synthetic fixtures isolated under `tests/`.
 

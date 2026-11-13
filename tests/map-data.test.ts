@@ -9,16 +9,16 @@ import { loadMapData, MAP_DATA_FILES, type MapDataLayer } from "../server/map-da
 const waypoints = {
   type: "FeatureCollection", name: "Synthetic waypoints", bbox: [0, 0, 2, 2],
   features: [{
-    type: "Feature", id: "synthetic-point", properties: { sol: 1, Note: "Test only", nested: { keep: true } },
-    geometry: { type: "Point", coordinates: [1, 2, 3] }
+    type: "Feature", id: "synthetic-point", properties: { sol: 1, elev_geoid: 3, Note: "Test only", nested: { keep: true } },
+    geometry: { type: "Point", coordinates: [1, 2] }
   }]
 };
 const roverPath = {
   type: "FeatureCollection", name: "Synthetic traverse",
   crs: { type: "name", properties: { name: "synthetic-reference-frame" } },
   features: [{
-    type: "Feature", properties: { sol: 1, length: 2 },
-    geometry: { type: "LineString", coordinates: [[0, 0, 4], [1, 1, 5]] }
+    type: "Feature", properties: { sol: 1, length: 2, elevations: [4, 5] },
+    geometry: { type: "LineString", coordinates: [[0, 0], [1, 1]] }
   }]
 };
 const fixtureFor = (layer: MapDataLayer) => layer === "waypoints" ? waypoints : roverPath;
@@ -46,8 +46,8 @@ test("layer names map only to the exact uploaded filenames", async () => {
     });
     assert.equal(requestedFile, MAP_DATA_FILES[layer]);
   }
-  assert.equal(MAP_DATA_FILES.waypoints, "waypoints_slims.geojson");
-  assert.equal(MAP_DATA_FILES["rover-path"], "rover_path.geojson");
+  assert.equal(MAP_DATA_FILES.waypoints, "map-layers/waypoints_2d.geojson");
+  assert.equal(MAP_DATA_FILES["rover-path"], "map-layers/rover_path_2d.geojson");
 });
 
 test("map loaders reject malformed collections and wrong geometry types", async () => {
@@ -55,6 +55,7 @@ test("map loaders reject malformed collections and wrong geometry types", async 
     { type: "FeatureCollection", features: "invalid" },
     { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [1] } }] },
     { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [1, Infinity] } }] },
+    { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [1, 2, 3] } }] },
     roverPath
   ]) {
     await assert.rejects(loadMapData("waypoints", async () => invalid), (error: unknown) =>
@@ -62,6 +63,12 @@ test("map loaders reject malformed collections and wrong geometry types", async 
   }
   await assert.rejects(loadMapData("rover-path", async () => waypoints), (error: unknown) =>
     error instanceof ApiError && error.code === "INVALID_DATA");
+  await assert.rejects(loadMapData("rover-path", async () => ({
+    type: "FeatureCollection", features: [{
+      type: "Feature", properties: {},
+      geometry: { type: "LineString", coordinates: [[0, 0, 4], [1, 1, 5]] }
+    }]
+  })), (error: unknown) => error instanceof ApiError && error.code === "INVALID_DATA");
 });
 
 test("missing and malformed map datasets return explicit 503 errors", async () => {
@@ -86,9 +93,16 @@ test("map endpoints allow GET only and do not expose arbitrary files", async () 
   assert.equal((await app(new Request("http://localhost/api/map-data/%2e%2e%2fregion.json"))).status, 404);
 });
 
-test("underscores are accepted in safe data filenames while path traversal is rejected", async () => {
-  await assert.rejects(loadJsonData("synthetic_missing_83b128.geojson"), (error: unknown) =>
-    error instanceof ApiError && error.code === "DATA_NOT_READY");
-  await assert.rejects(loadJsonData("../rover_path.geojson"), (error: unknown) =>
-    error instanceof ApiError && error.code === "INVALID_DATA_FILE");
+test("root and map-layer filenames are accepted while arbitrary paths are rejected", async () => {
+  for (const filename of ["synthetic_missing_83b128.geojson", "map-layers/synthetic_missing_83b128.geojson"]) {
+    await assert.rejects(loadJsonData(filename), (error: unknown) =>
+      error instanceof ApiError && error.code === "DATA_NOT_READY");
+  }
+  for (const filename of [
+    "../rover_path.geojson", "map-layers/../region.json", "map-layers/../../package.json",
+    "map-layers\\waypoints_2d.geojson", "/map-layers/waypoints_2d.geojson", "other/region.json"
+  ]) {
+    await assert.rejects(loadJsonData(filename), (error: unknown) =>
+      error instanceof ApiError && error.code === "INVALID_DATA_FILE");
+  }
 });
