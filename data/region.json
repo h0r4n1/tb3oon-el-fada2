@@ -1,0 +1,22 @@
+{
+  "id": "jezero",
+  "name": "Jezero Crater",
+  "status": "demo",
+  "bounds": {
+    "south": 18.41996953,
+    "west": 77.21789976,
+    "north": 18.49966275,
+    "east": 77.46313311
+  },
+  "base": {
+    "lat": 18.44462715,
+    "lon": 77.45088572,
+    "label": "Octavia E. Butler Landing",
+    "isFictional": false
+  },
+  "sourceIds": [
+    "m20-waypoints",
+    "m20-traverse"
+  ],
+  "dataVersion": "2026-11-13.1"
+}
