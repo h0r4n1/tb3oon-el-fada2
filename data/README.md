@@ -23,3 +23,9 @@ Use null for unknown measurements. Include provenance and version changes.
 `loadJsonData(filename)` in `server/data.ts` reads these files on the server.
 Prepared data stays in this directory; put Python preparation code in `scripts/`.
 Large raw source downloads should stay outside the repo.
+
+Read-only map endpoints now expose `waypoints_slims.geojson` as
+`GET /api/map-data/waypoints` and `rover_path.geojson` as
+`GET /api/map-data/rover-path`. Preserve those filenames unless the endpoint
+mapping is updated together with the data handoff. Other files are not exposed
+by an arbitrary filename endpoint.

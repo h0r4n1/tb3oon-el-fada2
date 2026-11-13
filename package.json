@@ -10,7 +10,7 @@
     "dev": "npm run build:frontend && node --watch server/dev.ts",
     "start": "node server/dev.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/api.test.ts tests/static.test.ts",
+    "test": "node --test tests/api.test.ts tests/static.test.ts tests/map-data.test.ts",
     "build:frontend": "node tools/build.mjs",
     "build": "npm run typecheck && npm run build:frontend"
   },

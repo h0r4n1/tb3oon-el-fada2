@@ -3,6 +3,7 @@ import { routeRequestSchema, routeResultSchema, type Region, type RoutePlanner }
 import { loadRegion } from "./data.ts";
 import { ApiError } from "./errors.ts";
 import { planRoutes } from "./route-engine.js";
+import { loadMapData, type MapDataLayer } from "./map-data.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -55,16 +56,19 @@ function inside(point: { lat: number; lon: number }, region: Region): boolean {
 export function createApp(dependencies: {
   planner?: RoutePlanner;
   regionLoader?: () => Promise<Region>;
+  mapDataLoader?: (layer: MapDataLayer) => Promise<unknown>;
 } = {}) {
   const planner = dependencies.planner ?? planRoutes;
   const regionLoader = dependencies.regionLoader ?? loadRegion;
+  const mapDataLoader = dependencies.mapDataLoader ?? loadMapData;
 
   return async function handleRequest(request: Request): Promise<Response> {
     let requestId: string | undefined;
     try {
       const path = new URL(request.url).pathname.replace(/\/$/, "");
       const methods: Record<string, string> = {
-        "/api/health": "GET", "/api/config": "GET", "/api/region": "GET", "/api/routes": "POST"
+        "/api/health": "GET", "/api/config": "GET", "/api/region": "GET", "/api/routes": "POST",
+        "/api/map-data/waypoints": "GET", "/api/map-data/rover-path": "GET"
       };
       if (!methods[path]) return json({ error: { code: "NOT_FOUND", message: "API endpoint not found." } }, 404);
       if (request.method !== methods[path]) {
@@ -78,6 +82,10 @@ export function createApp(dependencies: {
         return json({ simulation: true, notice: "Prototype assumptions; not validated rover limits.", config: MISSION_CONFIG });
       }
       if (path === "/api/region") return json(await regionLoader());
+      if (path === "/api/map-data/waypoints" || path === "/api/map-data/rover-path") {
+        const layer = path === "/api/map-data/waypoints" ? "waypoints" : "rover-path";
+        return json(await mapDataLoader(layer), 200, { "Content-Type": "application/geo+json" });
+      }
 
       const parsed = routeRequestSchema.safeParse(await readJson(request));
       if (!parsed.success) {

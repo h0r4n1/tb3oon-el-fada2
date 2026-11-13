@@ -70,7 +70,51 @@ returned. Bad JSON/input returns 400, wrong content type 415, oversized requests
 413, wrong methods 405, stale region data 409, and out-of-coverage/base errors 422.
 API errors have `{requestId?, error: {code, message, details?}}`.
 
-## Vercel (not deployed yet)
+## Zain: read-only map layers
+
+The map API exposes the team's uploaded GeoJSON directly, without a `data`
+wrapper:
+
+| Endpoint | Source file | Geometry |
+| --- | --- | --- |
+| `GET /api/map-data/waypoints` | `data/waypoints_slims.geojson` | Point FeatureCollection |
+| `GET /api/map-data/rover-path` | `data/rover_path.geojson` | LineString FeatureCollection |
+
+Both responses use `Content-Type: application/geo+json`. Original coordinates,
+altitude values, feature properties and root metadata are preserved. The backend
+checks the expected collection/geometry structures, without reprojecting the
+data or verifying planetary reference frames. Coordinate/provenance validation
+remains a joint map/data task. A rover traverse is source mission data, not a
+computed crewed-rover route or a verified terrain-safety result.
+
+These endpoints work independently of `/api/region` and Abood's route engine.
+Missing files return `503 DATA_NOT_READY`; malformed JSON or unexpected layer
+structure returns `503 INVALID_DATA`. Only these two layer names are exposed.
+
+```js
+async function fetchMapLayer(path) {
+  const response = await fetch(path);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error.message);
+  return body;
+}
+
+const [waypoints, roverPath] = await Promise.all([
+  fetchMapLayer('/api/map-data/waypoints'),
+  fetchMapLayer('/api/map-data/rover-path')
+]);
+
+L.geoJSON(waypoints).addTo(map);
+L.geoJSON(roverPath).addTo(map);
+```
+
+Use the map module's own styling, layer toggles and error states. Relative paths
+assume frontend/API share an origin; use the combined local server or a dev proxy
+when testing from a different frontend server. No cross-origin policy has been
+added. Vercel wrappers are under `api/map-data/`, and `vercel.json` includes the
+datasets in those function bundles.
+
+## Vercel (deployment status must be verified in the account)
 
 Import the repository as one project with the repository root as Root Directory,
 Framework Preset Other, Node 24.x, build command `npm run build`, and output

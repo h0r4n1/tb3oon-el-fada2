@@ -5,7 +5,7 @@ import { regionSchema, type Region } from "./contracts.ts";
 
 // Abood can use this for elevation.json, candidates.json and targets.geojson.
 export async function loadJsonData(filename: string): Promise<unknown> {
-  if (!/^[a-z0-9][a-z0-9-]*\.(json|geojson)$/i.test(filename)) {
+  if (!/^[a-z0-9][a-z0-9_-]*\.(json|geojson)$/i.test(filename)) {
     throw new ApiError(400, "INVALID_DATA_FILE", "Use a JSON filename inside data/.");
   }
   let text: string;
