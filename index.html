@@ -3,80 +3,162 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0d1214">
-  <title>Nebula Mission Planner</title>
+  <meta name="theme-color" content="#110d0a">
+  <title>Nebula • Rover OS</title>
   <meta name="description" content="Plan a simulated crewed rover trip in Jezero Crater along NASA's real Perseverance traverse, with a return-to-base reserve check.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23ff8a4c%22/%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="src/map.css">
-  <link rel="stylesheet" href="src/ui/mission.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="src/ui/rover-os.css">
 </head>
 <body>
-  <!-- Top bar: always visible. -->
-  <header class="topbar">
-    <div class="brand">✳ <b>NEBULA</b> <span>Mars Mission Planner · prototype</span></div>
-    <div class="topbar-right">
+  <!-- Canvas: orbit backdrop, then the ILLUSTRATIVE terrain behind the rover. -->
+  <canvas id="world" aria-hidden="true"></canvas>
+  <div class="vignette"></div><div class="scan"></div>
+
+  <header>
+    <div class="logo">✳ <b>NEBULA</b><small>ROVER OPERATING SYSTEM</small></div>
+    <div class="header-right">
       <span id="crewTag" class="crew-tag" hidden></span>
-      <button id="openSources" class="ghost">Sources &amp; limits</button>
+      <button id="openSources" class="ghost-btn">Sources &amp; limits</button>
+      <button id="fullscreen" aria-label="Toggle fullscreen">⛶</button>
     </div>
   </header>
 
-  <!-- 1. Intro -->
-  <section id="screenIntro" class="screen intro">
-    <figure class="intro-globe">
-      <img src="assets/mars.jpg" alt="Mars seen from orbit (NASA image)">
-      <figcaption>Mars globe: NASA (science.nasa.gov/resource/mars-planet-globe)</figcaption>
-    </figure>
-    <div class="intro-copy">
-      <p class="eyebrow">Interplanetary Survival Guide · Martian Map</p>
-      <h1>Which science trip can we finish<br>and still get home?</h1>
-      <p>Plan a crewed rover drive in Jezero Crater along NASA's real Perseverance traverse. Every plan
-        includes the trip back to base, with time and battery reserves.</p>
-      <button id="startIntro" class="primary">Begin mission setup →</button>
-      <p class="fine">Prototype. The base, crew and rover are a <b>simulated scenario</b>, not NASA operations or live telemetry.</p>
-    </div>
+  <img id="orbitalImage" src="assets/mars.jpg" alt="Mars seen from orbit (NASA image)">
+  <p id="orbitCredit" class="orbit-credit">Mars globe: NASA (science.nasa.gov/resource/mars-planet-globe)</p>
+
+  <!-- 1. Orbit -->
+  <section id="intro">
+    <p class="micro">INTERPLANETARY SURVIVAL GUIDE · MARTIAN MAP</p>
+    <h1>WHICH SCIENCE<br>TRIP CAN WE<br>FINISH?</h1>
+    <p class="intro-copy">Plan a crewed rover drive in Jezero Crater along NASA's real Perseverance traverse.<br>Every plan includes the way home.</p>
+    <button class="enter" id="enter">ENTER THE EXPEDITION <span>↗</span></button>
+    <p class="disclaimer">PROTOTYPE · THE BASE, CREW AND ROVER ARE A SIMULATED SCENARIO, NOT NASA OPERATIONS OR LIVE TELEMETRY</p>
   </section>
 
-  <!-- 2. Callsign + region -->
-  <section id="screenSetup" class="screen setup" hidden>
-    <div class="setup-card">
-      <p class="eyebrow">Step 1 · Crew</p>
-      <label for="callsign">Crew callsign</label>
-      <input id="callsign" maxlength="24" autocomplete="off" placeholder="e.g. NEBULA-1">
-      <p class="fine">Up to 24 characters. No account or personal data needed.</p>
-
-      <p class="eyebrow step2">Step 2 · Region</p>
-      <div id="regionCards" class="region-cards" role="radiogroup" aria-label="Choose a region"></div>
-      <p id="setupError" class="error" role="alert"></p>
-      <button id="enterRegion" class="primary">Enter region →</button>
-    </div>
+  <!-- 2. Crew and region -->
+  <section id="setup" class="stage" hidden>
+    <p class="micro">STEP 1 · CREW</p>
+    <h2>Mission setup</h2>
+    <label for="callsign">CREW CALLSIGN</label>
+    <input id="callsign" maxlength="24" autocomplete="off" placeholder="e.g. NEBULA-1">
+    <p class="fine">Up to 24 characters. No account or personal data needed.</p>
+    <p class="micro step2">STEP 2 · REGION</p>
+    <div id="regionCards" class="region-cards" role="radiogroup" aria-label="Choose a region"></div>
+    <p id="setupError" class="error" role="alert"></p>
+    <button id="enterRegion" class="enter">OPEN JEZERO ATLAS <span>→</span></button>
+    <button id="setupBack" class="text-button">← Back to orbit</button>
   </section>
 
-  <!-- 3. Planner: map + side panel -->
-  <section id="screenPlanner" class="screen planner" hidden>
-    <div class="map-wrap">
-      <div id="marsMap" class="nebula-mars-map"></div>
-      <p id="mapStatus" class="map-status" role="status">Loading Jezero map…</p>
-      <div class="map-legend">
-        <span><i class="dot base"></i>Base (simulated)</span>
-        <span><i class="dot target"></i>Science target</span>
-        <span><i class="dot waypoint"></i>NASA waypoint (observed)</span>
-        <span><i class="line traverse"></i>Perseverance traverse (observed)</span>
-        <span><i class="line route"></i>Planned route</span>
-        <span><i class="line return"></i>Return to base</span>
-        <span><i class="dot rover"></i>Rover (simulated)</span>
+  <!-- 3. Jezero Surface Atlas (also the tracking map during the drive) -->
+  <section id="atlas" class="atlas" hidden>
+    <div class="atlas-head">
+      <p class="micro">SURFACE ATLAS / JEZERO CRATER</p>
+      <h2 id="atlasTitle">Perseverance traverse</h2>
+      <p id="atlasHint">Drag to follow the traverse. Select a waypoint to see its record, or a science target to plan a trip.</p>
+    </div>
+    <div class="atlas-surface">
+      <div class="atlas-viewport">
+        <div id="mars-map" class="nebula-mars-map" hidden></div>
       </div>
-      <button id="recenter" class="ghost map-recenter">⌖ Recenter</button>
-      <p class="map-credit">Imagery: NASA Mars Trek, Jezero CTX mosaic (NASA/JPL-Caltech/MSSS). Traverse &amp; waypoints: NASA Mars 2020 mission map.</p>
+      <p id="mapLoading" class="map-loading" role="status">Loading Jezero map…</p>
     </div>
-    <aside id="panel" class="panel" aria-live="polite"></aside>
+    <div id="mapDataLabel" class="map-data-label" hidden></div>
+    <div class="atlas-toolbar">
+      <button id="atlasZoomIn" aria-label="Zoom in">＋</button>
+      <button id="atlasZoomOut" aria-label="Zoom out">−</button>
+      <button id="atlasLanding" aria-label="Recenter on the landing site">⌖<span>LANDING</span></button>
+      <button id="backOrbit" aria-label="Return to orbital view">↶<span>ORBIT</span></button>
+      <button id="backToDrive" aria-label="Back to the drive view" hidden>▶<span>DRIVE</span></button>
+    </div>
+    <div class="atlas-legend-chips" aria-label="Map legend">
+      <span><i class="chip-base"></i>Base (simulated)</span>
+      <span><i class="chip-target"></i>Science target</span>
+      <span><i class="chip-wp"></i>NASA waypoint</span>
+      <span><i class="chip-route"></i>Route</span>
+      <span><i class="chip-return"></i>Return</span>
+    </div>
+    <div class="atlas-coordinate"><span>JEZERO SURFACE ATLAS</span><b id="atlasFocusLabel">SELECT A WAYPOINT</b><small>IMAGERY: NASA MARS TREK CTX (NASA/JPL-CALTECH/MSSS) · TRAVERSE &amp; WAYPOINTS: NASA MARS 2020</small></div>
+    <section id="waypointDirectory" class="atlas-objectives waypoint-directory" aria-label="Waypoint finder" hidden>
+      <label class="micro" for="waypointSearch">FIND A NASA WAYPOINT</label>
+      <input id="waypointSearch" type="search" placeholder="Search by sol or site_drive (e.g. 352 or 9_5676)" autocomplete="off">
+      <select id="waypointSelect" aria-label="Choose a Perseverance waypoint"><option value="">Choose a waypoint</option></select>
+      <div id="targetChips" class="target-chips" aria-label="Science targets"></div>
+    </section>
+    <aside class="sector-panel" id="sectorPanel" aria-label="Location details" aria-live="polite">
+      <button id="collapseSector" class="collapse-sector" aria-label="Close details">×</button>
+      <div id="sectorBody"></div>
+    </aside>
   </section>
+
+  <!-- 6. Descent -->
+  <div id="descent" hidden><span>ESTABLISHING SURFACE LINK</span><strong id="descentCall">NEBULA–01</strong><small>DESCENDING TO ROVER</small></div>
+
+  <!-- 6. Third-person drive HUD -->
+  <section id="hud" hidden>
+    <div class="topline"><span><i></i> SURFACE LINK · SIMULATED SCENARIO</span><span id="hudLeg">JEZERO · OUTBOUND</span></div>
+    <div class="guidance" role="status" aria-live="off">
+      <span id="arrow">↑</span>
+      <div><p id="instruction">Ready</p><strong id="turnDistance">—</strong><small id="next">Press BEGIN DRIVE</small></div>
+    </div>
+
+    <div class="left-rail">
+      <span>BATTERY <em class="tag tag-simulated">SIMULATED</em></span>
+      <b id="battery">—<small> %</small></b>
+      <small id="batteryKWh">— kWh</small>
+      <div class="battery-track"><i id="batteryFill"></i><u id="batteryReserveMark" title="Required battery reserve"></u></div>
+      <hr>
+      <span>RETURN RESERVE <em class="tag tag-derived">DERIVED</em></span>
+      <b id="reserve">—<small> MIN</small></b>
+      <small id="reserveKWh">—</small>
+      <hr>
+      <span>ELEVATION <em class="tag tag-derived">DERIVED</em></span>
+      <b id="elevation">—<small> m</small></b>
+      <small>FROM RECORDED TRAVERSE · UNITS/DATUM UNVERIFIED</small>
+    </div>
+
+    <div class="right-rail">
+      <span>LOCAL POSITION</span>
+      <canvas id="radar" width="360" height="360" aria-label="Radar: the route around the simulated rover, heading up"></canvas>
+      <b id="destinationName">—</b>
+      <small id="eta">—</small>
+      <div class="rail-buttons"><button id="radarRecenter" aria-label="Recenter the map on the rover">⌖</button><button id="openMap">MAP</button></div>
+    </div>
+
+    <div id="hudPanel" class="hud-panel" hidden aria-live="polite"></div>
+
+    <div class="bottom">
+      <div class="speed"><strong id="speed">0.0</strong><span>KM/H<br><small>SIMULATED</small></span></div>
+      <div class="drive">
+        <button class="go" id="go">BEGIN DRIVE <span>▷</span></button>
+        <button id="speedBtn" aria-label="Playback speed">1× <span>PLAYBACK</span></button>
+        <button id="addStop" aria-label="Add a science stop">＋ <span>ADD STOP</span></button>
+        <button id="home" aria-label="Return to base">⌂ <span>RETURN</span></button>
+      </div>
+      <div class="travel"><span>ELAPSED <em class="tag tag-simulated">SIM</em></span><strong id="elapsed">00:00</strong><small id="timeLeft">—</small><small id="mode">STANDBY</small></div>
+    </div>
+
+    <div id="tripProgress" class="trip-progress">BASE ○ ───────── ◇ DESTINATION</div>
+    <details id="feed" class="feed">
+      <summary><span class="micro">ACTIVITY</span> <span id="feedLatest">—</span></summary>
+      <ol id="feedList"></ol>
+    </details>
+    <div class="sim-label">ILLUSTRATIVE TERRAIN · NOT NASA IMAGERY · ROUTE, STOPS AND LANDER POSITION FROM REAL TRAVERSE COORDINATES · NOT FOR REAL NAVIGATION</div>
+  </section>
+
+  <!-- 8. Mission summary -->
+  <dialog id="summaryDialog" class="rover-dialog"><div id="summaryBody"></div></dialog>
 
   <!-- Sources, assumptions and limitations -->
-  <dialog id="sourcesDialog" class="sources">
+  <dialog id="sourcesDialog" class="rover-dialog sources">
     <button class="close" id="closeSources" aria-label="Close">×</button>
     <div id="sourcesBody"></div>
   </dialog>
+
+  <div id="notice" role="status"></div>
+  <div id="announcer" class="visually-hidden" role="status" aria-live="polite"></div>
 
   <script src="assets/vendor/leaflet/leaflet.js"></script>
   <script type="module" src="src/ui/app.js"></script>

@@ -28,8 +28,10 @@ npm run build
   energy, scores and the return trip (team brief section 6), and returns
   pass / blocked / unverified with plain-English reasons. See
   [docs/routes-notes.md](docs/routes-notes.md).
-- `index.html`, `src/ui/` — the demo page (Leaflet 2D map). See
-  [docs/frontend-handoff.md](docs/frontend-handoff.md).
+- `index.html`, `src/ui/` — the Rover OS demo page: orbit, crew setup,
+  circular Jezero atlas (Leaflet), route briefing, descent, third-person drive
+  view with guidance, radar and activity feed, science stops, return and
+  summary. See [docs/frontend-handoff.md](docs/frontend-handoff.md).
 - `data/` — NASA Mars 2020 traverse and waypoints, region, science targets.
   See [data/README.md](data/README.md).
 - `api/` — Vercel function wrappers. `vercel.json` builds `dist/`.
@@ -44,6 +46,9 @@ npm run build
 - Routes follow where Perseverance actually drove; that is not a computed
   crewed route or a terrain-safety proof. Slopes are along-track only;
   elevation units and vertical datum are unverified.
+- The terrain behind the rover is illustrative artwork. The route ribbon,
+  stops and lander position come from the real coordinates. There is no
+  oxygen, temperature or weather data, so none is shown.
 - Mission settings (5 km/h, 15°, 120 min, 10 kWh, reserves, 70/30 weights) are
   prototype assumptions, not rover limits.
 
@@ -64,9 +69,16 @@ npm run build
 
 AI coding assistants were used with human direction and review: Codex (initial
 backend scaffold, validation, build, tests) and Claude Code by Anthropic
-(route engine, tests, the 14 Nov demo frontend, deployment fix, documentation).
+(route engine, tests, the 14 Nov demo frontend and its Rover OS restore,
+deployment fix, documentation). The Rover OS interface design and artwork are
+by Naser (team).
 No images or data are AI-generated. Details: the "AI assistance" sections in
 `docs/routes-notes.md`, `docs/frontend-handoff.md` and `docs/backend-handoff.md`.
+
+## Releases
+
+- **Version 1** (`v1`): the first working demo (2D planner).
+- **Version 1.1** (`v1.1`): the restored Rover OS interface on the same engine.
 
 ## License
 
