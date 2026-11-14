@@ -21,8 +21,7 @@
 import { mountMarsMap } from './adapters/mars-map.js';
 import { createApiClient } from './api-client.js';
 import { makePath, pointAt, headingAt, angleDiff, nextManeuver, distanceOfPoint, indexAt, lonLatAt } from './local-path.js';
-import { drawOrbit, drawSurface, drawRadar, makeDriveFrame } from './scene.js';
-import { toLocal } from './local-path.js';
+import { drawOrbit, drawSurface, drawRadar } from './scene.js';
 
 const $ = (id) => document.getElementById(id);
 const api = createApiClient();
@@ -616,13 +615,7 @@ function launchMission(candidate, plan) {
   const m = state.mission;
   m.yaw = headingAt(m.path, 0, 25) ?? 0;
   m.position = candidate.geometry[0];
-  // Fixed drive-view camera for the whole mission: frames the base, all three
-  // curated targets and the selected route. Never changes during the mission.
-  const framePoints = [{ x: 0, z: 0 },
-    ...[...state.targets.values()].map((t) => toLocal([t.lon, t.lat], basePoint())),
-    ...m.path.pts.filter((_, i) => i % 10 === 0)];
-  m.frameInput = { points: framePoints, heading: m.yaw };
-  m.frame = null;
+  m.camYaw = m.yaw;
   closeInspector();
   ensureRoverMarker();
   drawRoute(candidate);
@@ -800,13 +793,16 @@ function frame(now) {
     if (!$('world').hidden && (state.scene === 'descent' || !state.mapOpenDuringDrive)) {
       const s = legS(m);
       const moving = !m.paused && m.dwellMin <= 0 && !m.turning && ['navigating', 'returning'].includes(m.phase);
-      // The camera frame only depends on the mission and the window size.
-      if (!m.frame || m.frame.w !== viewW || m.frame.h !== viewH) m.frame = makeDriveFrame(m.frameInput.points, m.frameInput.heading, viewW, viewH);
+      // Chase camera: looks along the route about 60 m ahead of the rover (so
+      // the path stays in front), and follows the rover itself while it turns.
+      const here = pointAt(m.path, s);
+      const ahead = pointAt(m.path, Math.min(m.path.length, s + 60));
+      const lookYaw = !m.turning && Math.hypot(ahead.x - here.x, ahead.z - here.z) > 5 ? Math.atan2(ahead.x - here.x, ahead.z - here.z) : m.yaw;
+      m.camYaw += angleDiff(lookYaw, m.camYaw) * Math.min(1, dtSeconds * (reducedMotion ? 20 : 5));
       drawSurface(ctx, viewW, viewH, {
-        frame: m.frame, descent, path: m.path, s,
+        cam: pointAt(m.path, s), yaw: m.camYaw, lean: angleDiff(m.yaw, m.camYaw), descent, path: m.path, s,
         showRoute: m.phase !== 'arrived' && m.phase !== 'complete' && !m.turning,
-        stops: stopBeacons(m), lander: { x: 0, z: 0 },
-        rover: pointAt(m.path, s), roverYaw: m.yaw, moving, t, dpr: Math.min(devicePixelRatio, 2),
+        stops: stopBeacons(m), lander: { x: 0, z: 0 }, moving, t,
       });
     }
     if (state.scene === 'drive') {
