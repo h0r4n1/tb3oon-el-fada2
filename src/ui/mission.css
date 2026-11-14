@@ -151,5 +151,8 @@ dialog .close { position: absolute; right: 12px; top: 10px; background: none; bo
   .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
   .brand span { display: none; }
   .map-legend { display: none; }
+  .map-status { display: none; }
+  .topbar-right button { padding: 6px 10px; font-size: 13px; }
+  .brand { font-size: 13px; letter-spacing: 2px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; transition: none !important; animation: none !important; } }
