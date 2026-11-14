@@ -25,12 +25,19 @@ const FIXTURE_FILES = {
 };
 
 // Stands in for loadJsonData, reading the synthetic fixtures instead of data/.
+// Files it doesn't provide (e.g. the traverse) give DATA_NOT_READY, exactly
+// like the real loader, so planRoutes falls back to curated mode.
 async function fixtureLoader(filename) {
+  if (!(filename in FIXTURE_FILES)) throw new ApiError(503, "DATA_NOT_READY", `${filename} not supplied (test).`);
   return JSON.parse(await readFile(new URL(FIXTURE_FILES[filename], FIXTURES), "utf8"));
 }
 
-// Loader for small inline examples: returns the given objects by filename.
-const inlineLoader = (files) => async (filename) => structuredClone(files[filename]);
+// Loader for small inline examples: returns the given objects by filename
+// (DATA_NOT_READY for files it doesn't provide, like the real loader).
+const inlineLoader = (files) => async (filename) => {
+  if (!(filename in files)) throw new ApiError(503, "DATA_NOT_READY", `${filename} not supplied (test).`);
+  return structuredClone(files[filename]);
+};
 
 const KM_IN_DEGREES = 180 / (Math.PI * 3389.5); // 1 km on Mars, in degrees
 const BASE = { lat: 0, lon: 0 };

@@ -1,5 +1,14 @@
 # Proposed `candidates.json` format (curated route fallback)
 
+> **Status update (milestone 4): OPTIONAL / SUPERSEDED.** Routes now follow the
+> real Perseverance traverse in `data/map-layers/rover_path_2d.geojson`
+> (traverse mode, see `docs/routes-notes.md`). The engine reads
+> `candidates.json` **only if the traverse file is unavailable**. The data
+> teammate does **not** need to produce this file. The format below is kept as a
+> fallback. The `targets.geojson` section still applies to both modes, and
+> traverse mode also needs each target's **Point location** (within 25 m of the
+> traverse).
+
 **Status: PROPOSAL from Abood (Route Engineer) for the data teammate (Zaid).**
 Nothing here is a team decision until the data teammate, Zain and Naser agree.
 The engine (`server/candidates.js`) already reads this format. The working
