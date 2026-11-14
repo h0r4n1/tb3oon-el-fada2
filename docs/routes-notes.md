@@ -439,6 +439,20 @@ Used only when the traverse file is missing. See `docs/candidates-format.md`.
   simulated scenario element placed at that real location.
 - Demo script: plan base -> 5_0, then propose 7_1172 (South Seitah, science 3)
   as the worthwhile detour, then 9_5676 as the excessive one.
+- **Rover OS restore (14 Nov, branch `restore-ui`, Version 1.1):** the page
+  now uses Naser's Rover OS design again, on top of the same engine. The
+  frontend never computes a route number. It reads candidates exactly as the
+  engine returns them. Detour cards can be started directly: the stop order
+  is read from the engine's own detour reason ("stop on the way" means
+  `stopIds=[detour]`, destination = target; "extension" means
+  `stopIds=[target]`, destination = detour). The drive view converts the
+  engine's route coordinates to local metres only to draw the ribbon,
+  guidance arrows and radar (`src/ui/local-path.js`, display only). The HUD
+  elevation is looked up from the recorded traverse vertex under the rover
+  (null stays "Unknown"; units/datum unverified). No oxygen, temperature or
+  weather values are shown, because there is no data for them. The terrain
+  behind the rover is labelled "Illustrative terrain". Pre-departure stop
+  reordering was cut for time.
 
 ## AI assistance
 
@@ -465,5 +479,13 @@ fixtures in `tests/`, and these notes were written by **Claude Code
   applied the five agreed engine fixes, the Vercel deployment fix (plain-JS
   shared modules), `tests/demo-story.test.js`, and these notes, with Abood's
   approval of the plan. Abood had approved the five fixes on 13 Nov.
+
+- **14 Nov (Rover OS restore, Version 1.1):** Claude Code (Anthropic, model
+  Claude Opus 5.5) ported Naser's Rover OS interface (frontend commit
+  `af3c7da`, design by Naser) onto the integrated engine, following the
+  team's restoration handoff and Abood's data rules: `index.html`,
+  `src/ui/app.js`, `src/ui/scene.js`, `src/ui/local-path.js`,
+  `src/ui/rover-os.css` and `tests/local-path.test.js`. The visual design and
+  the original canvas artwork (orbit, terrain, rover, lander) are Naser's.
 
 To be recorded in the team submission notes as required.
