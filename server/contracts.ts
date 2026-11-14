@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MISSION_CONFIG } from "./config.ts";
+import { MISSION_CONFIG } from "./config.js";
 
 const number = z.number().finite();
 const nonnegative = number.nonnegative();
