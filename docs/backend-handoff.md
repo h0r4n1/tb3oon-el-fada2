@@ -135,3 +135,15 @@ https://www.typescriptlang.org/tsconfig/allowJs.html .
 AI assistance: the initial backend scaffold, validation, build support and tests
 were generated with Codex. Record subsequent human/AI contributions in the team
 submission notes.
+
+## 14 Nov change: shared server modules are plain JavaScript
+
+Vercel compiles `.ts` files to `.js` but does not rewrite `./x.ts` imports
+inside plain `.js` files, so every API function crashed in production
+(`FUNCTION_INVOCATION_FAILED`). `server/config.js`, `errors.js`, `data.js` and
+`map-data.js` are therefore plain JavaScript (same behaviour, types in JSDoc);
+`loadRegion` moved into `server/app.ts`. `data.js` finds `data/` relative to
+its own file so Vercel bundles it. Rule: **a `.js` file must never import a
+`.ts` file.** `vercel.json` bundles `data/**` with every API function.
+Production: https://tb3oon-el-fada2.vercel.app (change made by Claude Code at
+Abood's direction).
