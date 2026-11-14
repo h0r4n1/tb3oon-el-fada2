@@ -73,12 +73,94 @@ function isValidLonLat(position) {
 // Consecutive duplicate points (same lon and lat) are dropped; the first
 // copy is kept. Returns { vertices, gaps, isSynthetic }, where each gap is
 // { atCumulativeM, gapM, sol } (where along the path it falls and how wide).
+// SUPERSEDED_PREFIX_TOLERANCE_M: how closely an earlier piece must match the
+// start of a later piece (point by point) to count as a partial download of
+// it. Measured on the real data: the matches are 0 m (one pair 0.4 m).
+export const SUPERSEDED_PREFIX_TOLERANCE_M = 1;
+
+// countUnknownElevations: how many points of a piece have no usable elevation.
+function countUnknownElevations(feature) {
+  const n = feature.geometry.coordinates.length;
+  const elevations = feature.properties?.elevations;
+  let unknown = 0;
+  for (let j = 0; j < n; j++) {
+    if (cleanElevation(Array.isArray(elevations) ? elevations[j] : null) === null) unknown += 1;
+  }
+  return unknown;
+}
+
+// isPrefixOf: true if every point of `shorter` lies within the tolerance of the
+// point at the same position in `longer` (the shorter piece is a copy of the
+// start of the longer one).
+function isPrefixOf(shorter, longer) {
+  const a = shorter.geometry.coordinates;
+  const b = longer.geometry.coordinates;
+  if (a.length > b.length) return false;
+  return a.every((position, j) =>
+    haversineDistanceM({ lon: position[0], lat: position[1] }, { lon: b[j][0], lat: b[j][1] }) <=
+      SUPERSEDED_PREFIX_TOLERANCE_M
+  );
+}
+
+// dropSupersededPieces: the NASA file contains partial downloads. When the
+// rover's drive data arrived in parts, an earlier piece (e.g. sol 350,
+// 9_2982 -> 9_3478) was later re-sent as part of a longer piece starting at
+// the SAME place (sol 352, 9_2982 -> 9_5676). Keeping both made the path
+// jump backwards, which looked like "gaps". For each group of pieces with the
+// same fromRMC, we keep ONE piece: the longest; on a tie, the one with fewer
+// unknown elevations; then the later one. A piece is only dropped if it is
+// really a copy of the start of the kept piece (checked point by point).
+// Pieces without a fromRMC are always kept.
+// Returns { kept: [features], dropped: [{ index, sol, fromRMC, toRMC, keptIndex }] }.
+export function dropSupersededPieces(features) {
+  const groups = new Map();
+  features.forEach((feature, index) => {
+    const from = feature.properties?.fromRMC;
+    if (typeof from !== "string") return;
+    if (!groups.has(from)) groups.set(from, []);
+    groups.get(from).push(index);
+  });
+
+  const droppedIndexes = new Map(); // index -> keptIndex
+  for (const indexes of groups.values()) {
+    if (indexes.length < 2) continue;
+    const keep = [...indexes].sort((i, j) =>
+      features[j].geometry.coordinates.length - features[i].geometry.coordinates.length ||
+      countUnknownElevations(features[i]) - countUnknownElevations(features[j]) ||
+      j - i
+    )[0];
+    for (const index of indexes) {
+      if (index !== keep && isPrefixOf(features[index], features[keep])) droppedIndexes.set(index, keep);
+    }
+  }
+
+  const kept = [];
+  const dropped = [];
+  features.forEach((feature, index) => {
+    if (droppedIndexes.has(index)) {
+      const p = feature.properties ?? {};
+      dropped.push({ index, sol: p.sol ?? null, fromRMC: p.fromRMC, toRMC: p.toRMC ?? null, keptIndex: droppedIndexes.get(index) });
+    } else {
+      kept.push(feature);
+    }
+  });
+  return { kept, dropped };
+}
+
 export function buildTraverse(geojson) {
   const vertices = [];
   const gaps = [];
   let runIndex = 0;
+  // anchors: waypoint id (site_drive, e.g. "9_5676") -> vertex index. A
+  // piece's toRMC is where that drive ENDED, so the id is anchored to the
+  // piece's last vertex; its fromRMC (if not already known) to its first.
+  // Targets are anchored by id instead of by coordinates, because the rover
+  // often passed close to the same spot on different sols.
+  const anchors = new Map();
+  const { kept, dropped } = dropSupersededPieces(geojson.features);
 
-  geojson.features.forEach((feature) => {
+  kept.forEach((feature) => {
+    let pieceStartIndex = null; // vertex index where this piece's first point sits
     const coordinates = feature.geometry.coordinates;
     const elevations = feature.properties?.elevations; // may be missing
     const sol = Number.isFinite(feature.properties?.sol) ? feature.properties.sol : null;
@@ -107,17 +189,27 @@ export function buildTraverse(geojson) {
           gaps.push({ atCumulativeM: previous.cumulativeM, gapM: stepM, sol });
           point.cumulativeM = previous.cumulativeM;
         } else if (stepM === 0) {
+          if (j === 0) pieceStartIndex = vertices.length - 1; // starts on the previous vertex
           return; // duplicate of the previous point: skip it
         } else {
           point.cumulativeM = previous.cumulativeM + stepM;
         }
       }
+      if (j === 0) pieceStartIndex = vertices.length;
       vertices.push(point);
     });
+
+    // Anchors for this piece (first point -> fromRMC, last point -> toRMC).
+    const props = feature.properties ?? {};
+    if (pieceStartIndex !== null) {
+      if (typeof props.fromRMC === "string" && !anchors.has(props.fromRMC)) anchors.set(props.fromRMC, pieceStartIndex);
+      if (typeof props.toRMC === "string") anchors.set(props.toRMC, vertices.length - 1);
+    }
   });
 
   // `isSynthetic` lets test fixtures label themselves honestly.
-  return { vertices, gaps, isSynthetic: geojson.isSynthetic === true };
+  // `droppedPieces` records what dropSupersededPieces removed (for the docs).
+  return { vertices, gaps, anchors, droppedPieces: dropped, isSynthetic: geojson.isSynthetic === true };
 }
 
 // The parsed traverse is kept in memory per loader function, so the 1.6 MB

@@ -190,24 +190,35 @@ data**, the path a robotic rover actually drove. It is **not** a computed
 crewed-rover route and **not** proof that the ground is safe.
 
 **Building it** (`buildTraverse`):
-- The pieces stay in file order (their `sol` values only go up).
-- 1,651 back-to-back duplicate points are dropped, leaving 35,010 vertices.
+- **Superseded pieces are dropped first (14 Nov fix).** The NASA file holds
+  partial downloads: when a drive's data arrived in parts, the earlier part was
+  later re-sent inside a longer piece that starts at the **same `fromRMC`**,
+  repeating it as an exact prefix (0 m difference, identical elevations).
+  Keeping both made the path jump backwards, which looked like 5 "gaps". For
+  each group with the same `fromRMC` we keep the longest piece (tie: fewer
+  unknown elevations; then the later one), and only drop a piece that really is
+  a point-by-point copy (within 1 m) of the start of the kept one. Dropped on the
+  real data (file index, sol, fromRMC -> toRMC, kept instead):
+
+  | Dropped | Kept |
+  |---|---|
+  | #83 sol 350, 9_2982 -> 9_3478 | #85 sol 352, 9_2982 -> 9_5676 |
+  | #84 sol 351, 9_2982 -> 9_5156 | #85 sol 352 |
+  | #89 sol 358, 9_9314 -> 9_9436 | #90 sol 359, 9_9314 -> 10_0 |
+  | #95 sol 380, 11_1110 -> 11_2472 | #96 sol 381, 11_1110 -> 12_0 |
+  | #181 sol 668, 32_482 -> 32_580 (15 no-data elevations) | #180 sol 667, same path with known elevations |
+  | #534 sol 1896, 88_4292 -> 88_5126 | #535 sol 1897, 88_4292 -> 89_0 |
+
+  Result: **one continuous run, 0 gaps, 45.04 km, 34,299 vertices.**
+- Back-to-back duplicate points are dropped.
 - Each vertex gets the metres driven along the path so far (`cumulativeM`).
-- **Gaps:** a piece that starts more than **10 m** (`TRAVERSE_GAP_TOLERANCE_M`)
-  from where the previous one ended starts a new *continuous run*. The real
-  data has 5 gaps, giving 6 runs:
-
-  | Gap | Along the path | Width | Before sol |
-  |---|---|---|---|
-  | 1 | 3.438 km | 82 m | 351 |
-  | 2 | 3.843 km | 299 m | 352 |
-  | 3 | 5.041 km | 43 m | 359 |
-  | 4 | 5.768 km | 229 m | 381 |
-  | 5 | 43.388 km | 118 m | 1897 |
-
-  **A route never crosses a gap.** We don't know the ground in between, so we
-  never bridge it with a straight line. Gap widths are not added to
-  `cumulativeM`.
+- **Anchors (14 Nov fix):** every piece's `toRMC` (where that drive ended) is
+  anchored to the piece's last vertex, and its `fromRMC` to its first (if not
+  already known). A target id such as `9_5676` is the `toRMC` of exactly one
+  drive, so targets are located **by id**, not by the nearest coordinates. The
+  base `3_0` is vertex 0.
+- A piece starting more than **10 m** from the previous one would still start a
+  new continuous run (a real gap); after the fix the real data has none.
 
 **Snapping** (`snapToTraverse`): a requested point must be within **25 m**
 (`SNAP_TOLERANCE_M`) of a traverse vertex, otherwise `errors` gives its
@@ -286,8 +297,41 @@ least extra driving):
   proof."
 - "Elevation units and vertical datum are unverified."
 
-**Real-data results** (`tests/real-traverse.test.js`; 120 min, 10 kWh, no targets
-file yet):
+**14 Nov fixes (agreed with Abood):**
+1. **Targets anchored by id** (see Anchors above). A listed target as the
+   destination (or origin) uses its own drive's end vertex only.
+2. **Superseded pieces dropped** (see Building it above).
+3. **Best-case lower bound** (`route-math.js`): if nothing known is broken but
+   some slopes are unknown, the unknown ground is priced as flat (full speed,
+   base energy, at least its straight length). Slopes can only add time and
+   energy, so if even this best case misses the time or battery reserve the
+   route is **blocked** ("...even in the best case..."); otherwise it stays
+   **unverified** with no numbers invented.
+4. **Base alternatives are unverified.** The return always ends at the base
+   itself (vertex 0; only a pass within 1 m of the base counts). A route that
+   starts from another pass near the requested point (e.g. sol 33, 9 m from
+   the base) includes that hop as a segment with **unknown slope**
+   (`unmapped-hop`), so it can never pass; its reason says so.
+5. **1 m target match:** the destination is a listed target only if it is
+   within 1 m (`TARGET_MATCH_M`) of the target's coordinates in
+   `data/targets.geojson`; then it is anchored by that id. (No contract change.)
+
+**Real-data results after the fixes** (`tests/demo-story.test.js` asserts these;
+120 min, 10 kWh, server config):
+
+| Trip | Verdict | Drive out + back | Energy | Notes |
+|---|---|---|---|---|
+| base -> 5_0 | **pass** | 13.9 + 13.9 = 27.8 min (+5 min stop) | 1.27 kWh | 1.091 km each way |
+| base -> 7_1172 | **pass** | 33.0 + 32.8 = 65.8 min (+10 min stop) | 2.99 kWh | 2.408 km |
+| base -> 9_5676 | **blocked** | 53.5 + 53.4 min (+15 min stop) | 4.86 kWh | "Not enough time: ... short by 16.90 min" (1.9 min short even without the stop) |
+| 5_0 + detour to 7_1172 | **pass** | | 3.01 kWh | 24.2 min above the time reserve |
+| 5_0 + detour to 9_5676 | **blocked** | | | 21.9 min short of the time reserve |
+
+Other passes near the base (sol 33 at 9 m, sol 379 at 18 m) still appear as
+**unverified** previews; they cannot be recommended or started.
+
+**Old results before the fixes** (kept for the record; WRONG for 9_5676, which
+matched an earlier sol 137 pass 11 m away):
 
 | Trip | Routes offered | Recommended (outbound, total energy, C) | Notes |
 |---|---|---|---|
@@ -346,15 +390,14 @@ Used only when the traverse file is missing. See `docs/candidates-format.md`.
 - **No obstacle detection.** Coarse elevation cannot show rocks, sand traps or
   small cliffs.
 - **Only destinations on the traverse.** A point more than 25 m from the
-  traverse gets no route, and so does any trip that would cross a data gap.
+  traverse gets no route. A point 1-25 m away gets only an UNVERIFIED preview
+  (the hop crosses unmapped ground).
 - **Snapping can move the start or end by up to 25 m.** The route begins and
   ends at the matched traverse vertex. Its distance from the requested point
   is stated in the reasons (for example the sol 33 base pass is 9 m from the
   base).
 - **Forbidden areas are not implemented.** The brief blocks routes that cross
   a verified forbidden area, but no such data exists yet.
-- **No real targets yet.** `data/targets.geojson` doesn't exist, so real plans
-  have no science value or detours until it does.
 - **The traverse is cached in memory.** It's read once per server process, so
   restart the server after the data files change.
 
@@ -386,6 +429,17 @@ Used only when the traverse file is missing. See `docs/candidates-format.md`.
 - Slope should come from an elevation gradient. If we only have rise/run
   along the route, cross-slope is missed. The engine labels this in `reasons`.
 
+## Assumptions made on 14 Nov (instead of asking teammates)
+
+- The 6 superseded pieces are partial downloads (verified: exact prefixes,
+  identical elevations); dropping them is a data-cleaning step in the engine,
+  the data file itself is unchanged.
+- Targets are anchored by their `site_drive` id = the piece's `toRMC`.
+- The base is the first traverse point (`3_0`, sol 14). The crewed base is a
+  simulated scenario element placed at that real location.
+- Demo script: plan base -> 5_0, then propose 7_1172 (South Seitah, science 3)
+  as the worthwhile detour, then 9_5676 as the excessive one.
+
 ## AI assistance
 
 The route engine code (`server/geo.js`, `server/route-math.js`,
@@ -406,5 +460,10 @@ fixtures in `tests/`, and these notes were written by **Claude Code
   The synthetic fixtures were generated by a script and are labelled SYNTHETIC.
 - The traverse data itself is NASA Mars 2020 mission data prepared by the data
   teammate. It is not AI-generated.
+
+- **14 Nov (demo finish):** Claude Code (Anthropic, model Claude Opus 5.5)
+  applied the five agreed engine fixes, the Vercel deployment fix (plain-JS
+  shared modules), `tests/demo-story.test.js`, and these notes, with Abood's
+  approval of the plan. Abood had approved the five fixes on 13 Nov.
 
 To be recorded in the team submission notes as required.

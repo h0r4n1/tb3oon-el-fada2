@@ -43,6 +43,16 @@ const SLOPE_NOTE =
 const DATUM_NOTE = "Elevation units and vertical datum are unverified.";
 const NO_TARGETS_NOTE = "targets.geojson was not available, so science values and detours are not included.";
 
+// A listed target is recognised as the destination (or origin) only if the
+// requested point is within 1 m of the target's coordinates in
+// targets.geojson. The frontend sends the exact coordinates, so 1 m is ample.
+export const TARGET_MATCH_M = 1;
+
+// A traverse pass whose vertex is more than 1 m from the requested point means
+// a short "hop" over ground the rover never drove (unmapped). That hop's
+// terrain is unknown, so such a candidate can be UNVERIFIED at best.
+export const EXACT_POINT_M = 1;
+
 // metres: formats a distance for reasons, e.g. 12.3 -> "12 m".
 const metres = (m) => `${Math.round(m)} m`;
 
@@ -70,11 +80,41 @@ function nearestTargetTo(targets, point) {
   for (const [id, target] of targets) {
     if (!target.point) continue;
     const distanceM = haversineDistanceM(target.point, point);
-    if (distanceM <= SNAP_TOLERANCE_M && (best === null || distanceM < best.distanceM)) {
+    if (distanceM <= TARGET_MATCH_M && (best === null || distanceM < best.distanceM)) {
       best = { id, distanceM };
     }
   }
   return best;
+}
+
+// anchorIndex: the traverse vertex a target is anchored to BY ID (its
+// site_drive id is the end of exactly one drive), or null if the traverse has
+// no piece ending at that id (then we fall back to matching by coordinates).
+function anchorIndex(traverse, id) {
+  const index = traverse.anchors?.get(id);
+  return Number.isInteger(index) ? index : null;
+}
+
+// anchoredPass: a "pass" object for an anchored vertex, in the same shape as
+// snapToTraverse's passes, so the rest of the planner can use it unchanged.
+function anchoredPass(traverse, index, point) {
+  const vertex = traverse.vertices[index];
+  return {
+    vertexIndex: index,
+    distanceM: haversineDistanceM(vertex, point),
+    runIndex: vertex.runIndex,
+    sol: vertex.sol,
+    cumulativeM: vertex.cumulativeM,
+    anchored: true,
+  };
+}
+
+// hopSegment: a straight "hop" between a requested point and the traverse
+// vertex it was matched to. Its slope is UNKNOWN (null): the rover never drove
+// there. Returns null when the hop is 1 m or less (the same point).
+function hopSegment(distanceM) {
+  if (!(distanceM > EXACT_POINT_M)) return null;
+  return { distanceKm: distanceM / 1000, slopeDeg: null, method: "unmapped-hop" };
 }
 
 // isNearVertex: true if a vertex is within the snap tolerance of a point.
@@ -87,21 +127,31 @@ function isNearVertex(vertex, point) {
 // after the previous stop) within the snap tolerance of the target.
 // Returns { positions } (index in the slice for each stop) or { problem }
 // (a readable sentence saying what is wrong).
-function placeStops(slice, stopIds, targets) {
+function placeStops(slice, stopIds, targets, traverse) {
   const positions = [];
   let from = 0;
   for (const id of stopIds) {
     const point = targets.get(id).point;
+    const anchor = anchorIndex(traverse, id);
     let found = -1;
-    for (let i = from; i < slice.length; i++) {
-      if (isNearVertex(slice[i], point)) {
-        found = i;
-        break;
+    if (anchor !== null) {
+      // Anchored by id: the stop is exactly that vertex (slices hold the same
+      // vertex objects as the traverse, so we can look it up directly).
+      const i = slice.indexOf(traverse.vertices[anchor]);
+      if (i >= from) found = i;
+    } else {
+      for (let i = from; i < slice.length; i++) {
+        if (isNearVertex(slice[i], point)) {
+          found = i;
+          break;
+        }
       }
     }
     if (found === -1) {
       // Is it on the slice at all, just earlier than the previous stop?
-      const earlier = slice.slice(0, from).some((v) => isNearVertex(v, point));
+      const earlier = anchor !== null
+        ? slice.slice(0, from).includes(traverse.vertices[anchor])
+        : slice.slice(0, from).some((v) => isNearVertex(v, point));
       return {
         problem: earlier
           ? `Stops are not in travel order: "${id}" comes before the previous stop along this route.`
@@ -138,8 +188,19 @@ function bestReturn(traverse, fromIndex, basePasses) {
 // Returns { candidate, scienceComplete }.
 function evaluateItinerary(itinerary, context) {
   const { request, targets, config, isSynthetic } = context;
-  const outboundSegments = segmentSlice(itinerary.outboundSlice);
-  const returnSegments = itinerary.returnSlice === null ? null : segmentSlice(itinerary.returnSlice);
+  // Unmapped hops (if any) between the requested points and the traverse:
+  // origin hop at the start of the outbound; destination hop at its end and
+  // again at the start of the return (the rover must get back onto the path).
+  const originHop = hopSegment(itinerary.originHopM ?? 0);
+  const destHop = hopSegment(itinerary.destHopM ?? 0);
+  const outboundSegments = [
+    ...(originHop ? [originHop] : []),
+    ...segmentSlice(itinerary.outboundSlice),
+    ...(destHop ? [destHop] : []),
+  ];
+  const returnSegments = itinerary.returnSlice === null
+    ? null
+    : [...(destHop ? [destHop] : []), ...segmentSlice(itinerary.returnSlice)];
   const stops = summariseStops(itinerary.visitTargetIds, targets ?? new Map(), config);
 
   const evaluation = evaluateRoute(
@@ -193,10 +254,18 @@ function evaluateItinerary(itinerary, context) {
 // passNote: explains which pass of the traverse a point was matched to, so
 // the choice is visible (the rover often passed the same place twice).
 function passNote(label, pass, snap) {
+  if (pass.anchored) {
+    return `${label} anchored by waypoint id to the end of the sol ${pass.sol ?? "unknown"} drive, ` +
+      `${metres(pass.cumulativeM)} along the traverse.`;
+  }
   const several = snap.passes.length > 1 ? ` (it is near the traverse at ${snap.passes.length} places)` : "";
+  const hop = pass.distanceM > EXACT_POINT_M
+    ? ` UNVERIFIED: the ${metres(pass.distanceM)} hop between the requested point and this pass crosses unmapped ground ` +
+      "(the rover never drove it), so this route is a preview only."
+    : "";
   return (
     `${label} matched the traverse pass from sol ${pass.sol ?? "unknown"}, ` +
-    `${metres(pass.cumulativeM)} along the traverse, ${metres(pass.distanceM)} from the requested point${several}.`
+    `${metres(pass.cumulativeM)} along the traverse, ${metres(pass.distanceM)} from the requested point${several}.${hop}`
   );
 }
 
@@ -250,12 +319,31 @@ function findDetours(best, traverse, targets) {
   for (const [id, target] of targets) {
     if (visited.has(id) || !target.point) continue;
 
-    const onRouteIndex = best.outboundSlice.findIndex((v) => isNearVertex(v, target.point));
+    const anchor = anchorIndex(traverse, id);
+    const onRouteIndex = anchor !== null
+      ? best.outboundSlice.indexOf(traverse.vertices[anchor])
+      : best.outboundSlice.findIndex((v) => isNearVertex(v, target.point));
     if (onRouteIndex !== -1) {
       suggestions.push({ type: "on-route", id, target, extraM: 0, slicePosition: onRouteIndex });
       continue;
     }
     if (direction === 0) continue; // no travel direction to extend along
+
+    if (anchor !== null) {
+      // Anchored target: an extension only if it lies further along the
+      // traverse in the travel direction, in the same continuous run.
+      const ahead = Math.sign(anchor - destIndex) === direction;
+      if (ahead && traverse.vertices[anchor].runIndex === dest.runIndex) {
+        suggestions.push({
+          type: "extension",
+          id,
+          target,
+          extraM: Math.abs(traverse.vertices[anchor].cumulativeM - dest.cumulativeM),
+          newDestIndex: anchor,
+        });
+      }
+      continue;
+    }
 
     // Walk on from the destination, staying inside the same continuous run.
     // Once we come within range of the target, keep walking while still in
@@ -319,6 +407,7 @@ function buildDetourItinerary(best, detour, number, traverse, basePasses) {
     id,
     outboundSlice,
     returnSlice: ret ? ret.slice : null,
+    destHopM: 0, // the new destination is a target on the traverse
     visitTargetIds: [...best.stopIds, ...(best.finalTargetId ? [best.finalTargetId] : []), detour.id],
     notes,
   };
@@ -361,6 +450,33 @@ export function planTraverseRoutes(request, traverse, targets, config) {
   const base = snapRequestPoint(traverse, request.base, "Base", errors);
   if (!origin || !destination || !base) return result;
 
+  // 1b. The return ALWAYS ends at the base itself: only a pass within 1 m of
+  // the base counts (the start of the traverse, vertex 0). Other passes near
+  // the base (e.g. sol 33, 9 m away) would need a hop over unmapped ground.
+  base.passes = base.passes.filter((p) => p.distanceM <= EXACT_POINT_M);
+  if (base.passes.length === 0) {
+    errors.push(`Base is not on a recorded traverse point (must be within ${EXACT_POINT_M} m).`);
+    return result;
+  }
+
+  // 1c. A listed target as origin or destination is anchored BY ID (not by the
+  // nearest pass), when the requested point is within 1 m of the target.
+  // Origin alternatives near the requested point stay in the list but carry
+  // an unmapped hop, so they are UNVERIFIED previews at best.
+  const anchorPoint = (snap, point) => {
+    if (!targets) return;
+    const match = nearestTargetTo(targets, point);
+    const index = match ? anchorIndex(traverse, match.id) : null;
+    if (index === null) return;
+    const anchored = anchoredPass(traverse, index, point);
+    snap.passes = [anchored, ...snap.passes.filter((p) => p.vertexIndex !== index && p.distanceM > EXACT_POINT_M)];
+    return anchored;
+  };
+  anchorPoint(origin, request.origin);
+  const destinationAnchor = anchorPoint(destination, request.destination);
+  // An anchored destination uses ONLY its own drive (no other passes).
+  if (destinationAnchor) destination.passes = [destinationAnchor];
+
   // 2. Return-to-base request: the frontend sends the base as the destination.
   if (haversineDistanceM(request.destination, request.base) <= SNAP_TOLERANCE_M) {
     if (request.stopIds.length > 0) {
@@ -374,6 +490,7 @@ export function planTraverseRoutes(request, traverse, targets, config) {
         id: `trv-home-${o.vertexIndex}`,
         outboundSlice: [traverse.vertices[o.vertexIndex]], // zero-length outbound
         returnSlice: ret.slice,
+        originHopM: o.distanceM,
         visitTargetIds: [],
         notes: [
           "Return-to-base plan: the drive home is the return leg.",
@@ -424,7 +541,7 @@ export function planTraverseRoutes(request, traverse, targets, config) {
         crossesGap = true; // different continuous runs
         continue;
       }
-      const placement = placeStops(outboundSlice, stopIds, targets);
+      const placement = placeStops(outboundSlice, stopIds, targets, traverse);
       if (placement.problem) {
         problems.add(placement.problem);
         continue;
@@ -438,6 +555,8 @@ export function planTraverseRoutes(request, traverse, targets, config) {
         destIndex: d.vertexIndex,
         outboundSlice,
         returnSlice: ret ? ret.slice : null,
+        originHopM: o.distanceM,
+        destHopM: d.distanceM,
         stopIds,
         stopPositions: placement.positions,
         finalTargetId,

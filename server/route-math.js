@@ -123,6 +123,11 @@ function isNonNegativeNumber(value) {
 //   sumDQ        - sum of d_i × q_i (needed for the terrain score S)
 //   anyBlocked   - true if any segment is steeper than the limit
 //   anyUnverified- true if any segment had missing/invalid data
+//   minDriveMinutes, minEnergyKWh - BEST-CASE lower bounds: segments with an
+//                  unknown slope (but a known length) count as FLAT ground
+//                  (full speed, base energy). A slope can only ADD time and
+//                  energy, so the real values can never be lower than these.
+//                  null if any segment's LENGTH is unknown.
 // A total is null if ANY segment's value is unknown: adding an unknown
 // number to known ones gives an unknown answer, never a smaller one.
 // Reasons are pushed into the shared `reasons` list, labelled with the
@@ -135,6 +140,8 @@ function evaluateLeg(segments, directionLabel, reasons, config) {
     sumDQ: 0,
     anyBlocked: false,
     anyUnverified: false,
+    minDriveMinutes: 0,
+    minEnergyKWh: 0,
   };
 
   segments.forEach((segment, index) => {
@@ -154,6 +161,21 @@ function evaluateLeg(segments, directionLabel, reasons, config) {
     totals.distanceKm = isNonNegativeNumber(segment?.distanceKm) && totals.distanceKm !== null
       ? totals.distanceKm + segment.distanceKm
       : null;
+
+    // Best-case lower bound (see above). Known segments use their real cost;
+    // unknown-slope segments are priced as flat ground.
+    if (totals.minDriveMinutes !== null) {
+      if (result.feasibility !== FEASIBILITY.UNVERIFIED) {
+        totals.minDriveMinutes += result.driveMinutes;
+        totals.minEnergyKWh += result.energyKWh;
+      } else if (isNonNegativeNumber(segment?.distanceKm)) {
+        totals.minDriveMinutes += (60 * segment.distanceKm) / config.flatSpeedKmh;
+        totals.minEnergyKWh += config.baselineKWhPerKm * segment.distanceKm;
+      } else {
+        totals.minDriveMinutes = null;
+        totals.minEnergyKWh = null;
+      }
+    }
 
     if (result.feasibility === FEASIBILITY.UNVERIFIED) {
       totals.driveMinutes = null;
@@ -242,7 +264,7 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
   } else {
     unverified = true;
     reasons.push("Outbound route segments are missing.");
-    outbound = { distanceKm: null, driveMinutes: null, energyKWh: null, sumDQ: null };
+    outbound = { distanceKm: null, driveMinutes: null, energyKWh: null, sumDQ: null, minDriveMinutes: null, minEnergyKWh: null };
   }
 
   // --- 3. Return leg. Three different situations: ---
@@ -251,16 +273,16 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
     // null = the data says there is NO way back. That is a definite blocker.
     blocked = true;
     reasons.push("No return path to base is available.");
-    ret = { distanceKm: null, driveMinutes: null, energyKWh: null };
+    ret = { distanceKm: null, driveMinutes: null, energyKWh: null, minDriveMinutes: null, minEnergyKWh: null };
   } else if (Array.isArray(returnSegments) && returnSegments.length === 0) {
     // [] = "no return driving". That only makes sense if the rover never
     // left base (outbound distance exactly 0). Otherwise data is missing.
     if (outbound.distanceKm === 0) {
-      ret = { distanceKm: 0, driveMinutes: 0, energyKWh: 0 };
+      ret = { distanceKm: 0, driveMinutes: 0, energyKWh: 0, minDriveMinutes: 0, minEnergyKWh: 0 };
     } else {
       unverified = true;
       reasons.push("Return route is empty but the outbound route leaves base; return data is missing.");
-      ret = { distanceKm: null, driveMinutes: null, energyKWh: null };
+      ret = { distanceKm: null, driveMinutes: null, energyKWh: null, minDriveMinutes: null, minEnergyKWh: null };
     }
   } else if (Array.isArray(returnSegments)) {
     ret = evaluateLeg(returnSegments, "Return", reasons, config);
@@ -270,7 +292,7 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
     // undefined or something else that isn't a list: we were not told.
     unverified = true;
     reasons.push("Return route segments are missing.");
-    ret = { distanceKm: null, driveMinutes: null, energyKWh: null };
+    ret = { distanceKm: null, driveMinutes: null, energyKWh: null, minDriveMinutes: null, minEnergyKWh: null };
   }
 
   // Helper flags: is every value needed for a calculation known?
@@ -330,6 +352,38 @@ export function evaluateRoute(input, config = MISSION_CONFIG) {
         `Not enough battery: needs ${neededKWh.toFixed(4)} kWh including the return trip and ${batteryReserveKWh} kWh reserve, ` +
           `but only ${currentBatteryKWh.toFixed(4)} kWh available (short by ${(neededKWh - currentBatteryKWh).toFixed(4)} kWh).`
       );
+    }
+  }
+
+  // --- 5b. Best-case lower bound when some terrain is unknown. ---
+  // If nothing is known to be broken but some slopes are unknown, price the
+  // unknown ground as FLAT (the cheapest it could possibly be). If even that
+  // best case misses a reserve, the route is certainly BLOCKED. Otherwise it
+  // stays UNVERIFIED: it might pass, but we cannot prove it.
+  if (!blocked && unverified && knownStop &&
+      outbound.minDriveMinutes != null && ret.minDriveMinutes != null) {
+    const minMinutes = outbound.minDriveMinutes + stopMinutes + ret.minDriveMinutes;
+    if (isNonNegativeNumber(remainingMinutes) && H !== null && H > 0) {
+      const neededMinutes = minMinutes + config.minimumTimeReserveMinutes;
+      if (neededMinutes - remainingMinutes > EPSILON) {
+        blocked = true;
+        reasons.push(
+          `Not enough time even in the best case (unknown ground treated as flat): needs at least ${neededMinutes.toFixed(2)} min ` +
+            `including the return trip and ${config.minimumTimeReserveMinutes} min reserve, but only ${remainingMinutes.toFixed(2)} min remain ` +
+            `(short by ${(neededMinutes - remainingMinutes).toFixed(2)} min).`
+        );
+      }
+    }
+    if (isNonNegativeNumber(currentBatteryKWh)) {
+      const minKWh = outbound.minEnergyKWh + ret.minEnergyKWh + (config.auxiliaryKW * minMinutes) / 60;
+      const neededKWh = minKWh + batteryReserveKWh;
+      if (neededKWh - currentBatteryKWh > EPSILON) {
+        blocked = true;
+        reasons.push(
+          `Not enough battery even in the best case (unknown ground treated as flat): needs at least ${neededKWh.toFixed(4)} kWh ` +
+            `including the return trip and ${batteryReserveKWh} kWh reserve, but only ${currentBatteryKWh.toFixed(4)} kWh available.`
+        );
+      }
     }
   }
 

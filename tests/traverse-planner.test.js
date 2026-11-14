@@ -127,7 +127,13 @@ test("ambiguity: (1,0) is passed twice -> one candidate per pass, labelled with 
   const viaSol3 = mains.find((c) => hasReason(c, "Destination matched the traverse pass from sol 3"));
   assert.ok(viaSol1 && viaSol3, "both passes are offered and labelled");
   assertClose(viaSol1.distanceKm, 1, 1e-9, "direct pass km");
-  assertClose(viaSol3.distanceKm, 4.988, 0.001, "loop pass km");
+  // The sol 3 pass is ~12 m from the requested point: 4.988 km along the
+  // traverse plus a ~12 m hop over unmapped ground, so it can't be verified.
+  assertClose(viaSol3.distanceKm, 5.0, 0.001, "loop pass km (incl. unmapped hop)");
+  // Never "pass" (unknown hop). Here it is even blocked: its known 5 km loop
+  // already breaks a reserve, and a known violation beats "unknown".
+  assert.notEqual(viaSol3.feasibility, "pass");
+  assert.ok(hasReason(viaSol3, "crosses unmapped ground"));
   assert.ok(hasReason(viaSol1, "near the traverse at 2 places"));
   // The short direct route is recommended and listed first.
   assert.equal(result.candidates[0].id, viaSol1.id);
