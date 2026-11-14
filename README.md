@@ -1,12 +1,15 @@
 # Nebula | Mars Mission Planner
 
+Live demo: https://tb3oon-el-fada2.vercel.app
+
+The demo runs on NASA's real Perseverance traverse in Jezero Crater, with a
+simulated base, crew and rover scenario.
+
 **Which science trip can we finish and still get home?** Nebula plans a
 simulated crewed rover trip in Jezero Crater along NASA's real Perseverance
 traverse. Every plan includes the drive back to base, with time and battery
 reserves. NASA Space Apps 2026, challenge "Interplanetary Survival Guide:
 Martian Map".
-
-Live demo: https://tb3oon-el-fada2.vercel.app
 
 ## Run locally
 
