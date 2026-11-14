@@ -66,9 +66,11 @@ export function readCandidateFile(data) {
 }
 
 // readTargets: turns targets.geojson (a GeoJSON FeatureCollection) into a
-// lookup table: target id -> { scienceValue, stopMinutes }.
+// lookup table: target id -> { scienceValue, stopMinutes, point }.
 // scienceValue must be 1, 2 or 3 (Naser's rubric), otherwise it is null.
 // stopMinutes must be 0 or more, otherwise it is null. Never 0 for unknown.
+// point is the target's location as named {lat, lon}, converted from the
+// GeoJSON Point's [lon, lat]; null if the feature has no valid Point.
 export function readTargets(data) {
   if (!isPlainObject(data) || !Array.isArray(data.features)) {
     throw new ApiError(503, "INVALID_DATA", "targets.geojson must be a GeoJSON FeatureCollection with a \"features\" list.");
@@ -77,10 +79,12 @@ export function readTargets(data) {
   for (const feature of data.features) {
     const props = feature?.properties; // ?. avoids a crash if feature is null
     if (!isContractId(props?.id)) continue; // a target with no id can't be referenced
+    const position = feature?.geometry?.type === "Point" ? feature.geometry.coordinates : null;
     targets.set(props.id, {
       scienceValue: [1, 2, 3].includes(props.scienceValue) ? props.scienceValue : null,
       stopMinutes:
         Number.isFinite(props.stopMinutes) && props.stopMinutes >= 0 ? props.stopMinutes : null,
+      point: isContractPoint(position) ? { lat: position[1], lon: position[0] } : null,
     });
   }
   return targets;

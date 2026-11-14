@@ -49,7 +49,9 @@ function compareLowerFirst(a, b) {
 // 1) higher overallScore C, 2) higher safetyScore S, 3) lower time T.
 // `||` moves on to the next rule only when the previous one is a tie (0).
 // Scores are compared at full precision; rounding is for display only.
-function compareForRecommendation(a, b) {
+// Exported so the traverse planner can find the best itinerary to build
+// science detours from, without adding role labels.
+export function compareForRecommendation(a, b) {
   return (
     compareHigherFirst(a.overallScore, b.overallScore) ||
     compareHigherFirst(a.safetyScore, b.safetyScore) ||
@@ -57,20 +59,24 @@ function compareForRecommendation(a, b) {
   );
 }
 
-// pathKey: a text "fingerprint" of a route's outbound + return coordinates.
-// Two candidates with the same fingerprint are the same path on the ground.
-function pathKey(candidate) {
-  return JSON.stringify([candidate.geometry, candidate.returnGeometry]);
+// itineraryKey: a text "fingerprint" of an itinerary: outbound path, return
+// path AND the targets it stops at. The same path with different stops is a
+// DIFFERENT itinerary (e.g. a science detour that only adds a stop on the
+// way), so both must be kept.
+function itineraryKey(candidate, visitIds) {
+  return JSON.stringify([candidate.geometry, candidate.returnGeometry, visitIds]);
 }
 
-// removeDuplicatePaths: keeps the first candidate for each identical path
-// and notes the dropped ids in the kept one's reasons (brief: "Deduplicate
-// identical paths"). Works on copies, so the caller's objects are unchanged.
-export function removeDuplicatePaths(candidates) {
+// removeDuplicatePaths: keeps the first candidate for each identical
+// itinerary and notes the dropped ids in the kept one's reasons (brief:
+// "Deduplicate identical paths"). `visitIdsById` maps candidate id -> the
+// target ids it stops at (missing = no stops). Works on copies, so the
+// caller's objects are unchanged.
+export function removeDuplicatePaths(candidates, visitIdsById = new Map()) {
   const keptByKey = new Map(); // fingerprint -> the candidate we kept
   const kept = [];
   for (const candidate of candidates) {
-    const key = pathKey(candidate);
+    const key = itineraryKey(candidate, visitIdsById.get(candidate.id) ?? []);
     const existing = keptByKey.get(key);
     if (existing) {
       existing.reasons.push(`Identical path also listed as "${candidate.id}"; shown once.`);
@@ -91,15 +97,20 @@ export function removeDuplicatePaths(candidates) {
 //   options.scienceExcludedIds - ids whose scienceValue is incomplete (a
 //       visited target has no rating). They can't be "Science-focused",
 //       because their true science value is unknown.
+//   options.visitIdsById - candidate id -> visited target ids, used by
+//       duplicate removal (same path + different stops = different itinerary).
 //
 // Returns { candidates, messages }:
 //   candidates - recommended first, then other eligible routes, then blocked,
 //                then unverified (each group keeps its original data order).
 //   messages   - readable notes for the result's `errors` list (e.g. when no
 //                route is feasible, since there's no candidate to attach it to).
-export function rankCandidates(candidates, { scienceExcludedIds = new Set() } = {}) {
+export function rankCandidates(
+  candidates,
+  { scienceExcludedIds = new Set(), visitIdsById = new Map() } = {}
+) {
   const messages = [];
-  const unique = removeDuplicatePaths(candidates);
+  const unique = removeDuplicatePaths(candidates, visitIdsById);
 
   const eligible = unique.filter((c) => c.feasibility === FEASIBILITY.PASS);
   const blocked = unique.filter((c) => c.feasibility === FEASIBILITY.BLOCKED);
@@ -158,5 +169,34 @@ export function rankCandidates(candidates, { scienceExcludedIds = new Set() } = 
   return {
     candidates: [...sortedEligible, ...blocked, ...unverified],
     messages,
+  };
+}
+
+// The most candidates a single response returns (team decision, milestone 4).
+export const MAX_CANDIDATES = 6;
+
+// ROLE_PREFIXES: the start of the role reasons written by rankCandidates.
+const ROLE_PREFIXES = ["Recommended:", "Fastest:", "Science-focused:"];
+
+// capCandidates: keeps at most `limit` candidates from an already-ranked list.
+// Candidates holding a role (Recommended / Fastest / Science-focused) are
+// always kept, so a role is never hidden; the rest fill the remaining places
+// in ranked order (eligible first). The ranked order is preserved.
+// Returns { candidates, message }; message says how many were hidden, or is
+// null if nothing was hidden.
+export function capCandidates(ranked, limit = MAX_CANDIDATES) {
+  if (ranked.length <= limit) return { candidates: ranked, message: null };
+
+  const hasRole = (c) => c.reasons.some((r) => ROLE_PREFIXES.some((p) => r.startsWith(p)));
+  const keep = new Set(ranked.filter(hasRole).slice(0, limit));
+  for (const candidate of ranked) {
+    if (keep.size >= limit) break;
+    keep.add(candidate); // a Set ignores candidates already added
+  }
+  const candidates = ranked.filter((c) => keep.has(c));
+  const hidden = ranked.length - candidates.length;
+  return {
+    candidates,
+    message: `${hidden} more candidate route${hidden === 1 ? " was" : "s were"} hidden (at most ${limit} are shown).`,
   };
 }

@@ -11,19 +11,34 @@ The route engine runs on the server (Node), never in `src/` (the frontend).
 
 | File | What it does |
 |---|---|
-| `server/route-engine.js` | `planRoutes(request)`: the API's entry point. Loads data, matches, evaluates, ranks. |
-| `server/candidates.js` | Reads and checks `candidates.json` and `targets.geojson`, turns paths into segments, matches routes to a request, adds up stops and science. |
-| `server/ranking.js` | Removes duplicate paths and assigns the Recommended / Fastest / Science-focused roles. |
+| `server/route-engine.js` | `planRoutes(request)`: the API's entry point. Chooses traverse or curated mode, then ranks and caps the results. |
+| `server/traverse.js` | Builds the real rover traverse into one vertex list with continuous runs and gaps. Snaps points to it, slices it, and cuts slices into ~50 m segments with along-route slopes. |
+| `server/traverse-planner.js` | Traverse mode: turns a request into itineraries along the traverse (outbound, return, stops, the pass ambiguity rule, return-to-base) and suggests science detours. |
+| `server/candidates.js` | Curated mode (fallback): reads `candidates.json`. Also reads `targets.geojson` (used by both modes). |
+| `server/ranking.js` | Removes duplicate itineraries, assigns Recommended / Fastest / Science-focused, and caps the list at 6. |
 | `server/route-math.js` | `evaluateSegment` (one segment) and `evaluateRoute` (whole route with return trip, scores and verdict). |
 | `server/geo.js` | Mars distance (haversine), `pathDistanceKm` for GeoJSON polylines, plus small helpers (`clamp`, `toRadians`). |
-| `tests/*.test.js` | My hand-checked tests. Run them with `node --test tests/*.test.js` (the team's `npm test` runs only the API tests). |
-| `tests/fixtures/` | **Synthetic** demonstration data for tests only. Not Mars observations. |
+| `tests/*.test.js` | My hand-checked tests. Run them with `node --test tests/*.test.js` (the team's `npm test` now runs them too). |
+| `tests/real-traverse.test.js` | Reads the real `data/map-layers` files **read-only** and prints plans for base → 5_0, 7_1172 and 9_5676. Skipped if the data is absent. |
+| `tests/fixtures/` | **Synthetic** demonstration data for tests only. Not Mars observations, not the real traverse. |
 
 Config key names used (from `server/config.ts`): `flatSpeedKmh`,
 `maxSlopeDegrees`, `baselineKWhPerKm`, `minimumTimeReserveMinutes`,
 `batteryCapacityKWh`, `batteryReservePercent` (a percent: reserve kWh =
 capacity × percent / 100 = 2 kWh), `auxiliaryKW`, `defaultStopMinutes`,
 `terrainWeight`, `timeWeight`, `marsRadiusM`.
+
+## Coordinate and elevation conventions
+
+| Topic | Convention |
+|---|---|
+| Point objects inside our code | Named `{lat, lon}` in decimal degrees, so the order can't be swapped by accident. |
+| GeoJSON (data files, Candidate `geometry` / `returnGeometry`) | `[lon, lat]` arrays (x then y). Converted to `{lat, lon}` the moment we read them. Leaflet uses `[lat, lon]`; Zain's adapters handle that. |
+| Longitude | East-positive, in [-180, 180). |
+| Mars shape | A sphere with radius R = 3,389,500 m (a declared approximation, brief section 5). |
+| Distances | Always measured **along the traverse**, vertex to vertex. Never a straight line between the origin and destination. `dist_total_m` from the waypoints file is **not** used (it is 0 for "Mid-drive localization" and "Interpolated" waypoints, which means "not recorded"). |
+| Metres to km | Only `pathDistanceKm` divides by 1000. Inside the traverse code, along-path distances stay in metres. |
+| Elevation | From `properties.elevations` (one per vertex). The values look like metres (about −2586 to −1786), but **units and vertical datum are UNVERIFIED**. Any value above −100 (the 2.2e-05 no-data marker) is treated as unknown (`null`). |
 
 ## Distance on Mars (brief section 5)
 
@@ -155,7 +170,136 @@ Reserve edge cases for Route A:
   range. The clamp only removes tiny rounding errors (for example
   −0.00000000000002), which the team's contract would reject.
 
-## Planning and ranking: `planRoutes(request)` (brief sections 6 and 7)
+## Planning: two modes
+
+`planRoutes` first tries to load the traverse (`map-layers/rover_path_2d.geojson`)
+through the team's `loadMapData`.
+- If the traverse exists, **traverse mode** runs (below).
+- If it is missing, **curated mode** runs, using `candidates.json`.
+- If both are missing, `DATA_NOT_READY` (503) passes through unchanged.
+- Any other data problem (for example `INVALID_DATA`) is reported, not hidden.
+
+Both modes then share ranking and the **cap of 6 candidates**. Candidates
+holding a role are always kept, and `errors` says how many others were hidden.
+
+## Traverse mode (milestone 4)
+
+**What the traverse is:** NASA's real Mars 2020 (Perseverance) traverse: 559
+LineString pieces, 36,661 vertices, about 1 m apart. It is **source mission
+data**, the path a robotic rover actually drove. It is **not** a computed
+crewed-rover route and **not** proof that the ground is safe.
+
+**Building it** (`buildTraverse`):
+- The pieces stay in file order (their `sol` values only go up).
+- 1,651 back-to-back duplicate points are dropped, leaving 35,010 vertices.
+- Each vertex gets the metres driven along the path so far (`cumulativeM`).
+- **Gaps:** a piece that starts more than **10 m** (`TRAVERSE_GAP_TOLERANCE_M`)
+  from where the previous one ended starts a new *continuous run*. The real
+  data has 5 gaps, giving 6 runs:
+
+  | Gap | Along the path | Width | Before sol |
+  |---|---|---|---|
+  | 1 | 3.438 km | 82 m | 351 |
+  | 2 | 3.843 km | 299 m | 352 |
+  | 3 | 5.041 km | 43 m | 359 |
+  | 4 | 5.768 km | 229 m | 381 |
+  | 5 | 43.388 km | 118 m | 1897 |
+
+  **A route never crosses a gap.** We don't know the ground in between, so we
+  never bridge it with a straight line. Gap widths are not added to
+  `cumulativeM`.
+
+**Snapping** (`snapToTraverse`): a requested point must be within **25 m**
+(`SNAP_TOLERANCE_M`) of a traverse vertex, otherwise `errors` gives its
+distance. The rover often drove past the same place more than once (344 of 708
+waypoints have a second pass within 25 m). Matching vertices more than **100 m**
+apart along the path (`PASS_SEPARATION_M`) count as separate **passes**, and up
+to 3 are kept, closest first.
+
+**The ambiguity rule (agreed):** every combination of an origin pass and a
+destination pass that lies in the same continuous run becomes its own
+candidate. Each one says in its reasons which pass (sol) it used. Ranking then
+chooses openly. Nothing is picked silently.
+
+**Outbound:** the traverse between the origin vertex and the destination
+vertex, in either direction. **Return:** the traverse from the itinerary
+endpoint back to the base pass in the same run that is closest along the path.
+It retraces known ground, so its terrain is known too. If no base pass shares
+the run, there is no return path and the route is blocked.
+
+**Slopes** (`segmentSlice`):
+- Each slice is cut into windows of about **50 m** (`SLOPE_WINDOW_M`). A leftover
+  shorter than 25 m is merged into the window before it. Vertices are ~1 m
+  apart, so point-to-point slopes would be mostly noise.
+- slope = degrees(atan(|elevation change| / metres along the path)), with method
+  `along-track-rise-run`.
+- If **any** vertex in a window has an unknown elevation, that window's slope is
+  `null`, so the route becomes unverified.
+- `coveragePercent` = the share of all driven km (outbound + return) whose slope
+  is known. That is **data coverage, not safety**.
+
+**Stops and targets:**
+- Targets come from `data/targets.geojson`. A target can be used only if it is
+  within 25 m of the traverse.
+- **The destination as a target (agreed):** if a listed target is within 25 m of
+  the destination, it counts as the **final stop** (its stop minutes and science
+  value). It is counted once, even if its id is also in `stopIds`.
+- Requested `stopIds` must lie on the outbound slice **in the requested order**.
+  Otherwise `errors` says which stop is off the route or out of order.
+- **If `targets.geojson` is missing (agreed):** a request with no stops is still
+  planned, with no science value, no detours and a reason saying so. A request
+  with stops gets `DATA_NOT_READY`.
+
+**Mid-mission:**
+- The origin can be the rover's current position. The plan runs from there,
+  and the return still goes all the way to base.
+- **Return to base:** the frontend sends the base as the destination. The
+  outbound is then empty (zero distance) and the drive home is the return leg.
+  `safetyScore` and `overallScore` are `null` (N/A), but every time and battery
+  check still applies.
+- **Add stop while paused:** a new request with the current position as origin,
+  the new `stopIds`, and the current `remainingMinutes` / `currentBatteryKWh`.
+
+**Science detours** (brief Signature 2), built from the best feasible
+itinerary, at most **3** per request (highest science value first, then the
+least extra driving):
+- **Stop on the way:** a listed target already on the outbound path. No extra
+  driving; it adds stop time and auxiliary energy only.
+- **Extension:** a listed target farther along the traverse than the
+  destination, in the same continuous run. The new destination is that target,
+  the old destination becomes an intermediate stop, and the return starts from
+  the new endpoint. This adds driving both ways.
+- Each detour is a full candidate, checked against both reserves for the whole
+  round trip. Its first reason states the added minutes, added kWh, and the
+  battery and time margins left after returning to base. **Blocked detours are
+  still returned** with their reasons, so the UI can show why an excessive
+  detour was rejected.
+- Only targets on the traverse are considered. A target off the traverse
+  would need new driving through unknown ground.
+
+**Honesty reasons on every traverse candidate:**
+- "Route follows the real Perseverance traverse (source mission data), not a
+  computed crewed route." (Synthetic test fixtures say "SYNTHETIC test traverse"
+  instead.)
+- "Slopes are along-route rise/run over ~50 m windows only; cross-slope is not
+  captured, there is no obstacle detection, and this is not a terrain-safety
+  proof."
+- "Elevation units and vertical datum are unverified."
+
+**Real-data results** (`tests/real-traverse.test.js`; 120 min, 10 kWh, no targets
+file yet):
+
+| Trip | Routes offered | Recommended (outbound, total energy, C) | Notes |
+|---|---|---|---|
+| base → 5_0 | 2 | 0.915 km, 1.037 kWh, C 95.3 (from the sol 33 pass) | The sol 14 start route is 1.091 km, as measured by hand. The rover also passed within 9 m of the base on sol 33, 176 m into the drive. |
+| base → 7_1172 | 4 | 2.232 km, 2.745 kWh, C 86.4 | The base and 7_1172 each have 2 passes in run 0. |
+| base → 9_5676 | 2 | 1.282 km, 1.540 kWh, C 91.4 (destination pass from sol 137, 11 m away) | **Gap warning:** 9_5676's own vertex (sol 352) is in run 2, beyond gaps 1 and 2. The route uses an earlier drive (sol 137) that passed 11 m from the same spot, in the base's run. |
+
+All of these routes pass. That is under the prototype assumptions and along-track slopes only.
+
+## Curated mode (fallback, milestone 3)
+
+Used only when the traverse file is missing. See `docs/candidates-format.md`.
 
 1. Load `candidates.json` and `targets.geojson` with the team's
    `loadJsonData`. If a file is missing, `DATA_NOT_READY` (503) passes
@@ -169,8 +313,11 @@ Reserve edge cases for Route A:
    (within 50 m) and stops (in order). See `docs/candidates-format.md`.
 5. Each kept route is evaluated with `evaluateRoute` (server config, the crew's
    remaining minutes and battery).
-6. The routes are ranked:
-   - **Duplicates:** identical outbound + return paths are shown once.
+## Ranking (both modes)
+
+   - **Duplicates:** identical outbound path + return path + visited stops are
+     shown once. The same path with *different* stops is a different itinerary
+     (for example a detour that only adds a stop on the way), so both are kept.
    - **Eligible** means feasibility `pass`.
    - **Recommended:** highest C. Ties go to the higher S, then the lower T.
    - **Fastest:** lowest T. Ties go to the higher C.
@@ -186,46 +333,52 @@ Reserve edge cases for Route A:
    - A `null` overall score (zero-distance route) can't be recommended and
      sorts after scored routes, but it can still be Fastest.
 
-## Known limitations / milestone 4
+## Known limitations
 
+- **The traverse is not a crewed route.** It is where a robotic rover drove,
+  which suggests the ground was passable for *that* rover on *that* day. It
+  proves nothing about a crewed vehicle.
+- **Elevation units and vertical datum are unverified.** Slopes only use
+  elevation *differences*, so a constant datum offset would not change them, but
+  wrong units would.
+- **Along-track slope only.** Rise/run along the path cannot see cross-slope
+  (tilting sideways). It is not an elevation-derived gradient.
+- **No obstacle detection.** Coarse elevation cannot show rocks, sand traps or
+  small cliffs.
+- **Only destinations on the traverse.** A point more than 25 m from the
+  traverse gets no route, and so does any trip that would cross a data gap.
+- **Snapping can move the start or end by up to 25 m.** The route begins and
+  ends at the matched traverse vertex. Its distance from the requested point
+  is stated in the reasons (for example the sol 33 base pass is 9 m from the
+  base).
 - **Forbidden areas are not implemented.** The brief blocks routes that cross
   a verified forbidden area, but no such data exists yet.
-- **Mid-mission replanning is not designed yet.** Curated routes start at
-  base, so a request whose origin is the rover's current position matches
-  nothing.
-  - **Return from midway (proposal):** retrace the already-known outbound path
-    backwards. Take the active route's points up to the rover's current
-    position, reverse them, and reuse the same per-segment slopes. The first
-    piece is the partial segment the rover is on: its length comes from the
-    current position to the previous point, and it keeps that segment's slope.
-    This uses only terrain we already evaluated. It never draws a new straight
-    line through unknown ground. Budgets use the *current* remaining minutes and
-    battery, so time and energy already used are preserved.
-  - **Add stop while paused:** the data would need either (a) curated legs
-    from points along the active route to each candidate stop and back onto
-    the route or to base, each with per-segment slopes, or (b) an elevation
-    grid (bounds, spacing, slope or elevation, nodata mask) so a graph search
-    can build those legs. We'd also need the rover's position as an index along
-    the active route, plus the stop's `stopMinutes` and `scienceValue`.
-    The replan must be previewed and committed only on Accept.
-- **No terrain coverage yet:** `coveragePercent` is `null` until the data
-  gives it.
+- **No real targets yet.** `data/targets.geojson` doesn't exist, so real plans
+  have no science value or detours until it does.
+- **The traverse is cached in memory.** It's read once per server process, so
+  restart the server after the data files change.
 
 ## Open questions
 
-- **For Adi: `tests/api.test.ts:110` must expect `DATA_NOT_READY`.** The test
-  uses the real engine. It used to expect the placeholder's `ENGINE_NOT_READY`.
-  Now the engine runs and reports that `candidates.json` is missing, which is
-  still a 503 with no fake route. Until that line changes, `npm test` shows 1
-  failure.
+- **For the data teammate:** confirm the elevation units and vertical datum, and
+  supply `data/targets.geojson` (ids, Point locations on or near the traverse,
+  `scienceValue`, `stopMinutes`).
+- **For the team:** is a 9 m start offset acceptable? The sol 33 pass gives a
+  shorter route that starts 9 m from the base. Should the base require an exact
+  match instead?
+- **For the team:** are 25 m (snap), 10 m (gap), 50 m (slope window) and 100 m
+  (pass separation) right? Proposed config keys: `snapToleranceM`,
+  `traverseGapToleranceM`, `slopeWindowM`, `elevationNoDataAboveM`.
+- **For the team:** confirm `"m20-traverse"` (from `region.json`) as the
+  source id for traverse candidates.
+- **For Naser and Zain:** stop order follows `stopIds`. Is that the order the UI
+  will send?
 - **For Adi: make `scienceValue` nullable in `server/contracts.ts`.** The
   contract forces a number, even when a visited target has no rating. Current
   workaround: count only rated targets, name the unrated ones in `reasons`, and
   exclude the route from Science-focused.
 - **For Adi: add `routeMatchToleranceM` (50) to `server/config.ts`.** Until then
-  it's a named constant in `server/candidates.js`.
-- **For Adi: `npm test` could include `tests/*.test.js`** so the route-engine
-  tests run in the build too.
+  it's a named constant in `server/candidates.js` (curated mode only).
 - **For Zain: there is no `returnDistanceKm` field in the Candidate contract.**
   The brief says outbound and return distances are separate, but only
   `distanceKm` (outbound) exists. Adding it is a contract change, so it needs
@@ -236,10 +389,22 @@ Reserve edge cases for Route A:
 ## AI assistance
 
 The route engine code (`server/geo.js`, `server/route-math.js`,
-`server/ranking.js`, `server/candidates.js`, `server/route-engine.js`), its
-tests and fixtures in `tests/`, and these notes were written by **Claude Code
-(Anthropic)** at the direction of Abood (Route Engineer). Abood set the
-requirements, approved each plan before any code was written, decided the open
-design questions (recorded above), and reviewed the code with plain-English
-explanations. All formulas come from the team brief, and the test values were
-checked by hand. To be recorded in the team submission notes as required.
+`server/ranking.js`, `server/candidates.js`, `server/route-engine.js`,
+`server/traverse.js`, `server/traverse-planner.js`), its tests and synthetic
+fixtures in `tests/`, and these notes were written by **Claude Code
+(Anthropic)** at the direction of Abood (Route Engineer).
+
+- Abood set the requirements, approved each plan before any code was written,
+  decided the open design questions (recorded above), and reviewed the code
+  with plain-English explanations.
+- **Milestone 4:** Abood measured the real traverse (vertex counts,
+  the no-data marker, `dist_total_m` problems, slope noise across 5–100 m
+  windows) and chose the 50 m window. Claude Code measured the gaps, duplicate
+  points and repeated passes it used to propose the tolerances, which Abood
+  approved.
+- All formulas come from the team brief. The test values were checked by hand.
+  The synthetic fixtures were generated by a script and are labelled SYNTHETIC.
+- The traverse data itself is NASA Mars 2020 mission data prepared by the data
+  teammate. It is not AI-generated.
+
+To be recorded in the team submission notes as required.
