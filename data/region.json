@@ -11,8 +11,8 @@
   "base": {
     "lat": 18.44462715,
     "lon": 77.45088572,
-    "label": "Octavia E. Butler Landing",
-    "isFictional": false
+    "label": "Nebula Base (simulated) at Octavia E. Butler Landing",
+    "isFictional": true
   },
   "sourceIds": [
     "m20-waypoints",

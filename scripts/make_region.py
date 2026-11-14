@@ -29,8 +29,8 @@ region = {
     "base": {
         "lat": lp["lat"],
         "lon": lp["lon"],
-        "label": "Octavia E. Butler Landing",
-        "isFictional": False,
+        "label": "Nebula Base (simulated) at Octavia E. Butler Landing",
+        "isFictional": True,  # simulated base at a real place
     },
     "sourceIds": ["m20-waypoints", "m20-traverse"],
     "dataVersion": "2026-11-13.1",

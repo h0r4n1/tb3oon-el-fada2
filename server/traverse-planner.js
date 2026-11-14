@@ -248,6 +248,9 @@ function evaluateItinerary(itinerary, context) {
     coveragePercent,
     sourceIds: TRAVERSE_SOURCE_IDS,
   };
+  // Every candidate states its return reserve in plain English (brief
+  // Signature 1), so the UI can show it without computing anything itself.
+  candidate.reasons.push(`Return reserve: ${describeReserves(candidate, request, config)}`);
   return { candidate, scienceComplete: stops.scienceComplete };
 }
 
