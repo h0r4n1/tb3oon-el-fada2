@@ -169,7 +169,7 @@ export function drawSurface(ctx, w, h, view) {
   // Stop beacons (science stops and the destination) on the real coordinates.
   for (const stop of view.stops ?? []) {
     const p = project(stop.x * S, stop.z * S, terrainY(stop.x * S, stop.z * S));
-    if (p[3] < 20 || p[3] > 2600) continue;
+    if (p[3] < 80 || p[3] > 2600) continue; // skip the stop the rover is standing on
     const height = Math.max(18, 70 * p[2]);
     ctx.strokeStyle = stop.done ? '#9aa39b88' : '#ffd38a';
     ctx.lineWidth = 2;

@@ -330,8 +330,11 @@ $('atlasLanding').onclick = () => {
 $('backOrbit').onclick = () => { closeInspector(); show('orbit'); };
 $('collapseSector').onclick = () => (state.scene === 'drive' ? closeTrackingMap() : closeInspector());
 
+// replaceChildren would print null as the text "null", so drop empty parts.
+const present = (children) => children.filter((child) => child !== null && child !== undefined && child !== false);
+
 function openInspector(...children) {
-  $('sectorBody').replaceChildren(...children);
+  $('sectorBody').replaceChildren(...present(children));
   $('sectorPanel').classList.add('revealed');
   $('sectorPanel').scrollTop = 0;
   $('atlas').classList.add('focused');
@@ -996,7 +999,7 @@ function closeTrackingMap() {
 function setHudPanel(...children) {
   const panel = $('hudPanel');
   if (!children.length) { panel.hidden = true; panel.replaceChildren(); return; }
-  panel.replaceChildren(...children);
+  panel.replaceChildren(...present(children));
   panel.hidden = false;
   panel.scrollTop = 0;
   requestAnimationFrame(() => panel.querySelector('button')?.focus());
