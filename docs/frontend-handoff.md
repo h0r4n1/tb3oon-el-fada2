@@ -27,9 +27,9 @@ top of the integrated route engine. Every route number comes from
    (solid outbound, dashed return). Only a PASS card can start. Science detour
    cards can start directly; their stop order comes from the engine's reason.
 6. **Descent → drive view**: the rover follows the selected candidate's real
-   geometry. Since v1.2 the drive view uses a fixed camera framed once per
-   mission (base, curated targets, route): the illustrative terrain never
-   moves and only the rover moves and turns across it. Route ribbon and chevrons show only the path ahead, the guidance
+   geometry. Since v1.2 a chase camera follows the rover from behind and
+   the illustrative ground, rocks and hills are keyed to world coordinates, so
+   they stream past in perspective (they do not move with the rover). Route ribbon and chevrons show only the path ahead, the guidance
    banner shows the next bend (from the real path), the radar shows the same
    path heading-up, and the rails show battery (% and kWh, reserve marker),
    the plan's return reserve, and the current elevation from the recorded
