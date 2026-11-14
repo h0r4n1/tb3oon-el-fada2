@@ -27,7 +27,9 @@ top of the integrated route engine. Every route number comes from
    (solid outbound, dashed return). Only a PASS card can start. Science detour
    cards can start directly; their stop order comes from the engine's reason.
 6. **Descent → drive view**: the rover follows the selected candidate's real
-   geometry. Route ribbon and chevrons show only the path ahead, the guidance
+   geometry. Since v1.2 the drive view uses a fixed camera framed once per
+   mission (base, curated targets, route): the illustrative terrain never
+   moves and only the rover moves and turns across it. Route ribbon and chevrons show only the path ahead, the guidance
    banner shows the next bend (from the real path), the radar shows the same
    path heading-up, and the rails show battery (% and kWh, reserve marker),
    the plan's return reserve, and the current elevation from the recorded
@@ -45,8 +47,8 @@ top of the integrated route engine. Every route number comes from
 
 Battery and elapsed time are one simulated clock: driving spends the leg's
 engine kWh per engine minute plus the auxiliary draw; dwell spends the
-auxiliary draw only; pause spends nothing. Playback speed (1×/3×/10×) never
-changes a route cost. There is no oxygen, temperature or weather display
+auxiliary draw only; pause spends nothing. Playback speed (1×/3×/5×/10×/15×; 1× is real
+time: one mission minute takes one real minute) never changes a route cost. There is no oxygen, temperature or weather display
 because there is no data for them.
 
 ## Demo script (tested in headless Chrome, desktop, tablet and phone)
@@ -55,7 +57,7 @@ Enter the expedition → callsign → Open Jezero atlas → chip "Sol 130" → C
 routes (Direct route PASS 97/82/92, + South Séítah PASS, + Sol 352 BLOCKED) →
 Start mission → Begin drive → Add stop → South Séítah (PASS, return margin
 +72.3 → +24.4 min) → Accept → Add stop → Sol 352 (BLOCKED, ~32 min short) →
-Keep plan → Resume, playback 10× → science stops → Plan return to base →
+Keep plan → Resume, playback 15× → science stops → Plan return to base →
 Drive home → summary → New mission.
 
 ## Files

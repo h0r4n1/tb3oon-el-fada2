@@ -7,12 +7,11 @@
 // route geometry returned by the engine (converted to local metres), instead
 // of the old sine-wave road. The hills themselves are illustrative only: there
 // is no elevation grid, and the screen says "Illustrative terrain".
+// v1.2: the drive view uses a FIXED camera, so the terrain stays still and
+// only the rover moves (see makeDriveFrame).
 
-import { pointAt, headingAt } from './local-path.js';
+import { pointAt } from './local-path.js';
 
-// 1 local metre = VISUAL_SCALE drawing units. Only changes how the picture
-// looks (how far ahead you can see), never a route number.
-export const VISUAL_SCALE = 0.35;
 
 const noise = (x, z) =>
   Math.sin(x * 0.035 + z * 0.013) * 12 + Math.cos(x * 0.016 - z * 0.028) * 17 + Math.sin(x * 0.009 + z * 0.005) * 28;
@@ -38,13 +37,51 @@ export function drawOrbit(ctx, w, h, t) {
   ctx.stroke();
 }
 
+// FIXED CAMERA for the drive view (v1.2). The camera is chosen once per
+// mission so that the base, the curated targets and the route all fit in the
+// frame. The terrain and background are drawn from that fixed camera and
+// never move; only the rover (and the route ahead of it) changes.
+//
+// points: local metres [{x, z}] to fit (base, targets, route).
+// headingHint: fallback viewing direction (radians, clockwise from north).
+export function makeDriveFrame(points, headingHint, w, h) {
+  const unit = Math.min(w, h) * 0.95;
+  const horizon = h * 0.41;
+  const cxm = points.reduce((sum, p) => sum + p.x, 0) / Math.max(1, points.length);
+  const czm = points.reduce((sum, p) => sum + p.z, 0) / Math.max(1, points.length);
+  // Look from the base toward the middle of the mission area.
+  const yaw = Math.hypot(cxm, czm) > 1 ? Math.atan2(cxm, czm) : headingHint ?? 0;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const uv = points.map((p) => ({ u: p.x * cy - p.z * sy, v: p.x * sy + p.z * cy }));
+  const umin = Math.min(...uv.map((p) => p.u));
+  const umax = Math.max(...uv.map((p) => p.u));
+  const vmin = Math.min(...uv.map((p) => p.v));
+  const vmax = Math.max(...uv.map((p) => p.v));
+  const uc = (umin + umax) / 2;
+  const D0 = 160; // depth of the nearest point (drawing units)
+  const alt = ((0.76 * h - horizon) * D0) / unit; // nearest point sits at 76% of the height
+  const farDepth = (alt * unit) / (0.08 * h); // farthest point stays above the horizon
+  let k = (farDepth - D0) / Math.max(1, vmax - vmin); // drawing units per metre
+  // Shrink until every point fits in the middle of the screen (clear of the rails).
+  for (let i = 0; i < 80; i++) {
+    const fits = uv.every((p) => Math.abs((p.u - uc) * k) * unit / ((p.v - vmin) * k + D0) <= 0.32 * w);
+    if (fits) break;
+    k *= 0.92;
+  }
+  return { yaw, cy, sy, uc, vmin, k, D0, alt, w, h };
+}
+
 // view = {
-//   cam: {x, z} rover position in local metres, yaw: heading (rad, cw from north),
+//   frame: from makeDriveFrame (fixed for the whole mission),
 //   descent: 0..1 (1 = on the ground), path: active leg path, s: distance along it,
 //   showRoute: draw the ribbon/chevrons, stops: [{x, z, label, done}],
-//   lander: {x, z} | null, moving: bool, t: seconds
+//   lander: {x, z} | null, rover: {x, z}, roverYaw: rover heading,
+//   moving: bool, t: seconds, dpr: device pixel ratio
 // }
-export function drawSurface(ctx, w, h, view) {
+let terrainCache = null; // {canvas, key}
+
+function drawBackdrop(ctx, w, h, frame, project) {
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   sky.addColorStop(0, '#342b29');
   sky.addColorStop(0.43, '#b78059');
@@ -57,11 +94,11 @@ export function drawSurface(ctx, w, h, view) {
   ctx.beginPath();
   ctx.arc(w * 0.76, h * 0.23, 25, 0, 7);
   ctx.fill();
+  const shift = frame.yaw * 180; // fixed for the mission
   for (let layer = 0; layer < 3; layer++) {
     ctx.fillStyle = ['#695047', '#755447', '#846047'][layer];
     ctx.beginPath();
     ctx.moveTo(0, horizon + layer * 15);
-    const shift = view.yaw * 180;
     for (let x = 0; x <= w + 20; x += 20) {
       ctx.lineTo(x, horizon - 25 - Math.sin((x + shift * (layer + 1)) * 0.009 + layer * 3) * 22 - Math.cos((x + shift) * 0.023 + layer) * 12 + layer * 16);
     }
@@ -69,34 +106,12 @@ export function drawSurface(ctx, w, h, view) {
     ctx.lineTo(0, h);
     ctx.fill();
   }
-
-  const S = VISUAL_SCALE;
-  const camX = view.cam.x * S;
-  const camZ = view.cam.z * S;
-  const alt = 45 + Math.pow(1 - view.descent, 3) * 650;
-  const cy = Math.cos(view.yaw);
-  const sy = Math.sin(view.yaw);
-  const unit = Math.min(w, h) * 0.95;
-
-  // World (drawing units) -> screen. depth is measured along the heading.
-  function project(x, z, y = 0) {
-    const dx = x - camX;
-    const dz = z - camZ;
-    const depth = dx * sy + dz * cy + 50;
-    const scale = unit / Math.max(8, depth);
-    return [w / 2 + (dx * cy - dz * sy) * scale, horizon + (alt - y) * scale, scale, depth];
-  }
-  function groundPoint(x, z) {
-    const wx = camX + x * cy + z * sy;
-    const wz = camZ - x * sy + z * cy;
-    return project(wx, wz, terrainY(wx, wz));
-  }
-
-  // Illustrative ground mesh.
+  // Illustrative ground mesh, in the fixed camera's coordinates.
+  const ground = (x, z) => project(x, z, terrainY(x, z));
   for (let z = 1800; z > 30; z -= 35) {
     for (let x = -900; x < 950; x += 55) {
-      const p = [groundPoint(x, z), groundPoint(x + 55, z), groundPoint(x + 55, z + 35), groundPoint(x, z + 35)];
-      const shade = Math.round(55 + noise(camX + x * cy + z * sy, camZ - x * sy + z * cy) * 0.28 + (z / 1800) * 25);
+      const p = [ground(x, z), ground(x + 55, z), ground(x + 55, z + 35), ground(x, z + 35)];
+      const shade = Math.round(55 + noise(x, z) * 0.28 + (z / 1800) * 25);
       ctx.fillStyle = `rgb(${shade + 38},${shade + 9},${shade - 8})`;
       ctx.beginPath();
       p.forEach((v, i) => (i ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1])));
@@ -107,56 +122,87 @@ export function drawSurface(ctx, w, h, view) {
       ctx.stroke();
     }
   }
+}
 
-  const worldAt = (s) => {
-    const p = pointAt(view.path, s);
-    return { x: p.x * S, z: p.z * S };
+export function drawSurface(ctx, w, h, view) {
+  const f = view.frame;
+  const horizon = h * 0.41;
+  const unit = Math.min(w, h) * 0.95;
+  const alt = f.alt + Math.pow(1 - view.descent, 3) * 650;
+
+  // Fixed camera: (lateral, depth, height) in drawing units -> screen.
+  function project(lat, depth, y = 0) {
+    const scale = unit / Math.max(8, depth);
+    return [w / 2 + lat * scale, horizon + (alt - y) * scale, scale, depth];
+  }
+  // Local metres -> fixed-camera drawing units.
+  const toFrame = ({ x, z }) => ({
+    lat: (x * f.cy - z * f.sy - f.uc) * f.k,
+    depth: (x * f.sy + z * f.cy - f.vmin) * f.k + f.D0,
+  });
+  const onGround = (p, lift = 1) => {
+    const q = toFrame(p);
+    return project(q.lat, q.depth, terrainY(q.lat, q.depth) + lift);
   };
+
+  // Terrain and background: drawn once and reused (they never move).
+  if (view.descent >= 1) {
+    const dpr = view.dpr ?? 1;
+    const key = `${w}x${h}@${dpr}`;
+    if (!terrainCache || terrainCache.frame !== f || terrainCache.key !== key) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      const c = canvas.getContext('2d');
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawBackdrop(c, w, h, f, project);
+      terrainCache = { canvas, frame: f, key };
+    }
+    ctx.drawImage(terrainCache.canvas, 0, 0, w, h);
+  } else {
+    drawBackdrop(ctx, w, h, f, project); // descent: the camera is still coming down
+  }
 
   // Projected route ribbon: ONLY the upcoming part of the active leg, from the
   // rover to the leg endpoint (completed path is not drawn).
   if (view.showRoute && view.path && view.path.length > 0) {
     const end = view.path.length;
-    const reach = Math.min(end, view.s + 3600);
     const stepM = 6;
-    for (let s1 = view.s; s1 < reach; s1 += stepM) {
+    ctx.fillStyle = 'rgba(171,246,204,0.6)';
+    for (let s1 = view.s; s1 < end; s1 += stepM) {
       const s2 = Math.min(end, s1 + stepM);
-      const a = worldAt(s1);
-      const b = worldAt(s2);
-      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const a = toFrame(pointAt(view.path, s1));
+      const b = toFrame(pointAt(view.path, s2));
+      const len = Math.hypot(b.lat - a.lat, b.depth - a.depth);
       if (len < 1e-6) continue;
-      const nx = ((b.z - a.z) / len) * 4;
-      const nz = (-(b.x - a.x) / len) * 4;
-      const pa = project(a.x, a.z, terrainY(a.x, a.z) + 1);
-      if (pa[3] < 12) continue;
+      const nx = ((b.depth - a.depth) / len) * 3;
+      const nz = (-(b.lat - a.lat) / len) * 3;
+      const ya = terrainY(a.lat, a.depth) + 1;
+      const yb = terrainY(b.lat, b.depth) + 1;
       const quad = [
-        project(a.x - nx, a.z - nz, terrainY(a.x, a.z) + 1),
-        project(a.x + nx, a.z + nz, terrainY(a.x, a.z) + 1),
-        project(b.x + nx, b.z + nz, terrainY(b.x, b.z) + 1),
-        project(b.x - nx, b.z - nz, terrainY(b.x, b.z) + 1),
+        project(a.lat - nx, a.depth - nz, ya),
+        project(a.lat + nx, a.depth + nz, ya),
+        project(b.lat + nx, b.depth + nz, yb),
+        project(b.lat - nx, b.depth - nz, yb),
       ];
-      const fade = Math.max(0, 1 - (s1 - view.s) / 3600);
-      ctx.fillStyle = `rgba(171,246,204,${0.25 + fade * 0.5})`;
       ctx.beginPath();
       quad.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
       ctx.closePath();
       ctx.fill();
     }
-    // Forward chevrons, every 40 m along the real path, ending at the endpoint.
-    const spacing = 40;
+    // Forward chevrons along the real path, pointing the way, ending at the endpoint.
+    const spacing = Math.max(40, end / 45);
     const first = Math.ceil((view.s + 10) / spacing) * spacing;
-    for (let s = first; s < Math.min(end - 5, view.s + 900); s += spacing) {
-      const p = worldAt(s);
-      const pp = project(p.x, p.z, terrainY(p.x, p.z) + 2);
-      if (pp[3] < 70) continue; // skip chevrons right under the camera
-      const heading = headingAt(view.path, s, 8);
-      const rel = heading === null ? 0 : heading - view.yaw;
-      const size = pp[2] * 7;
+    for (let s = first; s < end - 5; s += spacing) {
+      const pp = onGround(pointAt(view.path, s), 2);
+      const ahead = onGround(pointAt(view.path, Math.min(end, s + 6)), 2);
+      const angle = Math.atan2(ahead[0] - pp[0], -(ahead[1] - pp[1]));
+      const size = Math.max(3, Math.min(14, pp[2] * 4));
       ctx.save();
       ctx.translate(pp[0], pp[1]);
-      ctx.rotate(rel);
+      ctx.rotate(angle);
       ctx.strokeStyle = '#d6ffe5cc';
-      ctx.lineWidth = Math.max(1, pp[2]);
+      ctx.lineWidth = Math.max(1, Math.min(3, pp[2] * 0.6));
       ctx.beginPath();
       ctx.moveTo(-size, size * 0.5);
       ctx.lineTo(0, 0);
@@ -168,9 +214,9 @@ export function drawSurface(ctx, w, h, view) {
 
   // Stop beacons (science stops and the destination) on the real coordinates.
   for (const stop of view.stops ?? []) {
-    const p = project(stop.x * S, stop.z * S, terrainY(stop.x * S, stop.z * S));
-    if (p[3] < 80 || p[3] > 2600) continue; // skip the stop the rover is standing on
-    const height = Math.max(18, 70 * p[2]);
+    const p = onGround(stop, 0);
+    if (p[3] < 20) continue;
+    const height = Math.max(24, Math.min(90, 40 * p[2]));
     ctx.strokeStyle = stop.done ? '#9aa39b88' : '#ffd38a';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -192,18 +238,14 @@ export function drawSurface(ctx, w, h, view) {
     ctx.textAlign = 'left';
   }
 
-  // Fictional lander next to the real landing coordinates (base).
+  // Fictional lander next to the real landing coordinates (base). Fixed in the scene.
   if (view.lander) {
-    const lx = view.lander.x * S + 12;
-    const lz = view.lander.z * S;
-    const base = project(lx, lz, 0);
-    // Only draw it when it is clearly ahead of the rover (not right behind
-    // the camera), and keep it a sensible size.
-    if (base[3] > 110 && base[3] < 2400) {
+    const q = toFrame(view.lander);
+    const base = project(q.lat + 14, q.depth, 0);
+    if (base[3] > 15) {
       const [bx, by] = base;
-      const scale = base[2] * 0.4;
+      const scale = Math.min(2.6, base[2] * 0.4);
       ctx.save();
-      ctx.globalAlpha = Math.min(1, 0.35 + 300 / base[3]);
       ctx.translate(bx, by);
       ctx.scale(scale, scale);
       ctx.fillStyle = '#0005';
@@ -243,12 +285,18 @@ export function drawSurface(ctx, w, h, view) {
     }
   }
 
-  // Rover silhouette (illustrative vehicle, not a NASA model).
-  const rw = Math.min(w * 0.21, 220);
+  // Rover silhouette (illustrative vehicle, not a NASA model): the ONLY thing
+  // that moves. It sits at its real position along the route and turns to
+  // face its direction of travel (it turns around for the drive home).
+  const rp = onGround(view.rover, 0);
+  const tip = onGround({ x: view.rover.x + Math.sin(view.roverYaw) * 8, z: view.rover.z + Math.cos(view.roverYaw) * 8 }, 0);
+  const facing = Math.atan2(tip[0] - rp[0], -(tip[1] - rp[1]));
+  const rw = Math.max(26, Math.min(Math.min(w * 0.12, 130), rp[2] * 36));
   const rh = rw * 0.48;
   ctx.save();
-  ctx.translate(w / 2, h * 0.79);
-  ctx.rotate(view.moving ? Math.sin(view.t * 3) * 0.008 : 0);
+  ctx.translate(rp[0], rp[1]);
+  ctx.rotate(facing + (view.moving ? Math.sin(view.t * 3) * 0.008 : 0));
+  ctx.translate(0, -rh * 0.3);
   ctx.fillStyle = '#0006';
   ctx.beginPath();
   ctx.ellipse(0, rh * 0.65, rw * 0.7, rh * 0.3, 0, 0, 7);

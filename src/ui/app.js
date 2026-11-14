@@ -21,7 +21,8 @@
 import { mountMarsMap } from './adapters/mars-map.js';
 import { createApiClient } from './api-client.js';
 import { makePath, pointAt, headingAt, angleDiff, nextManeuver, distanceOfPoint, indexAt, lonLatAt } from './local-path.js';
-import { drawOrbit, drawSurface, drawRadar } from './scene.js';
+import { drawOrbit, drawSurface, drawRadar, makeDriveFrame } from './scene.js';
+import { toLocal } from './local-path.js';
 
 const $ = (id) => document.getElementById(id);
 const api = createApiClient();
@@ -587,8 +588,10 @@ function metric(label, value) {
 // ---------------------------------------------------------------------------
 // 6. Mission: ONE simulation clock and ONE active plan for both views.
 // ---------------------------------------------------------------------------
-// Simulated minutes per real second at playback 1x.
-const SIM_MINUTES_PER_SECOND = 1;
+// Playback 1x is a true 1:1 clock: one simulated minute takes one real minute.
+// Faster steps only speed up the playback, never the engine's numbers.
+const SIM_MINUTES_PER_SECOND = 1 / 60;
+const PLAYBACK_SPEEDS = [1, 3, 5, 10, 15];
 
 function launchMission(candidate, plan) {
   state.mission = {
@@ -613,6 +616,13 @@ function launchMission(candidate, plan) {
   const m = state.mission;
   m.yaw = headingAt(m.path, 0, 25) ?? 0;
   m.position = candidate.geometry[0];
+  // Fixed drive-view camera for the whole mission: frames the base, all three
+  // curated targets and the selected route. Never changes during the mission.
+  const framePoints = [{ x: 0, z: 0 },
+    ...[...state.targets.values()].map((t) => toLocal([t.lon, t.lat], basePoint())),
+    ...m.path.pts.filter((_, i) => i % 10 === 0)];
+  m.frameInput = { points: framePoints, heading: m.yaw };
+  m.frame = null;
   closeInspector();
   ensureRoverMarker();
   drawRoute(candidate);
@@ -790,10 +800,13 @@ function frame(now) {
     if (!$('world').hidden && (state.scene === 'descent' || !state.mapOpenDuringDrive)) {
       const s = legS(m);
       const moving = !m.paused && m.dwellMin <= 0 && !m.turning && ['navigating', 'returning'].includes(m.phase);
+      // The camera frame only depends on the mission and the window size.
+      if (!m.frame || m.frame.w !== viewW || m.frame.h !== viewH) m.frame = makeDriveFrame(m.frameInput.points, m.frameInput.heading, viewW, viewH);
       drawSurface(ctx, viewW, viewH, {
-        cam: pointAt(m.path, s), yaw: m.yaw, descent, path: m.path, s,
+        frame: m.frame, descent, path: m.path, s,
         showRoute: m.phase !== 'arrived' && m.phase !== 'complete' && !m.turning,
-        stops: stopBeacons(m), lander: { x: 0, z: 0 }, moving, t,
+        stops: stopBeacons(m), lander: { x: 0, z: 0 },
+        rover: pointAt(m.path, s), roverYaw: m.yaw, moving, t, dpr: Math.min(devicePixelRatio, 2),
       });
     }
     if (state.scene === 'drive') {
@@ -934,7 +947,7 @@ $('go').onclick = () => {
 };
 $('speedBtn').onclick = () => {
   const m = state.mission;
-  m.speed = m.speed === 1 ? 3 : m.speed === 3 ? 10 : 1;
+  m.speed = PLAYBACK_SPEEDS[(PLAYBACK_SPEEDS.indexOf(m.speed) + 1) % PLAYBACK_SPEEDS.length];
   updateHud();
 };
 $('addStop').onclick = () => openProposals();
@@ -1229,7 +1242,7 @@ function renderSources() {
       el('li', {}, `Flat speed ${c.flatSpeedKmh} km/h; slope limit ${c.maxSlopeDegrees}°; mission ${c.missionDurationMinutes} min with a ${c.minimumTimeReserveMinutes} min reserve.`),
       el('li', {}, `Battery ${c.batteryCapacityKWh} kWh with a ${c.batteryReservePercent}% reserve; driving ${c.baselineKWhPerKm} kWh/km; auxiliary ${c.auxiliaryKW} kW (also spent during science stops).`),
       el('li', {}, `Overall score = ${c.terrainWeight} × terrain safety + ${c.timeWeight} × time. Speed slows and energy rises with slope (team brief formulas).`),
-      el('li', {}, 'Playback speed (1×/3×/10×) only changes how fast the simulation runs, never a route cost.')),
+      el('li', {}, 'Playback speed (1×/3×/5×/10×/15×; 1× is real time) only changes how fast the simulation runs, never a route cost.')),
     el('h3', {}, 'Limitations'),
     el('ul', {},
       el('li', {}, 'Routes follow where the robotic rover actually drove. That is not a computed crewed-rover route and not proof the ground is safe.'),
