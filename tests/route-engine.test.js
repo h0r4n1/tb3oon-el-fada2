@@ -14,8 +14,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { planRoutes } from "../server/route-engine.js";
 import { routeResultSchema } from "../server/contracts.ts";
-import { MISSION_CONFIG } from "../server/config.ts";
-import { ApiError } from "../server/errors.ts";
+import { MISSION_CONFIG } from "../server/config.js";
+import { ApiError } from "../server/errors.js";
 import { createApp } from "../server/app.ts";
 
 const FIXTURES = new URL("./fixtures/", import.meta.url);

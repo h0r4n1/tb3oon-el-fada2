@@ -129,7 +129,7 @@ test("loadTraverse: parses once per loader (cached) and passes DATA_NOT_READY th
   assert.equal(first, second);
   assert.equal(reads, 1);
 
-  const { ApiError } = await import("../server/errors.ts");
+  const { ApiError } = await import("../server/errors.js");
   const missing = async () => {
     throw new ApiError(503, "DATA_NOT_READY", "not yet");
   };

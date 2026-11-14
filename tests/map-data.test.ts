@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
-import { loadJsonData } from "../server/data.ts";
-import { ApiError } from "../server/errors.ts";
-import { loadMapData, MAP_DATA_FILES, type MapDataLayer } from "../server/map-data.ts";
+import { loadJsonData } from "../server/data.js";
+import { ApiError } from "../server/errors.js";
+import { loadMapData, MAP_DATA_FILES, type MapDataLayer } from "../server/map-data.js";
 
 // Synthetic structural fixtures, not Mars observations or mission routes.
 const waypoints = {

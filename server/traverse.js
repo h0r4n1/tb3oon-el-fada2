@@ -16,8 +16,8 @@
 // Units: metres along the path are kept in metres here. Kilometres for the
 // route maths come only from pathDistanceKm (the single metres -> km place).
 
-import { loadMapData } from "./map-data.ts";
-import { ApiError } from "./errors.ts";
+import { loadMapData } from "./map-data.js";
+import { ApiError } from "./errors.js";
 import { haversineDistanceM, pathDistanceKm } from "./geo.js";
 
 // --- Named constants (proposed for server/config.ts once the team agrees) ---

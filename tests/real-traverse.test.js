@@ -13,9 +13,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { planRoutes } from "../server/route-engine.js";
 import { loadTraverse, snapToTraverse } from "../server/traverse.js";
-import { loadJsonData } from "../server/data.ts";
+import { loadJsonData } from "../server/data.js";
 import { routeResultSchema } from "../server/contracts.ts";
-import { MISSION_CONFIG } from "../server/config.ts";
+import { MISSION_CONFIG } from "../server/config.js";
 
 const FILES = ["data/map-layers/rover_path_2d.geojson", "data/map-layers/waypoints_2d.geojson", "data/region.json"];
 const missing = FILES.filter((f) => !existsSync(f));

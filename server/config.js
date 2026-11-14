@@ -1,3 +1,4 @@
+// Plain JavaScript so imports work both locally and on Vercel (see errors.js).
 // Proposed prototype assumptions from the team brief, not validated rover limits.
 export const MISSION_CONFIG = Object.freeze({
   marsRadiusM: 3389500,

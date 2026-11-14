@@ -5,7 +5,7 @@
 
 // Mission settings (including the Mars radius) live in server/config.ts,
 // owned by the backend team. Node strips the TypeScript types on import.
-import { MISSION_CONFIG } from "./config.ts";
+import { MISSION_CONFIG } from "./config.js";
 
 // clamp: keeps a number inside a range.
 // Example: clamp(1.3, 0, 1) -> 1, clamp(-0.2, 0, 1) -> 0, clamp(0.5, 0, 1) -> 0.5.

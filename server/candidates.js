@@ -8,7 +8,7 @@
 //   4. adds up stop minutes and science value for the targets a route visits.
 // It never invents a route, a slope or a science rating.
 
-import { ApiError } from "./errors.ts";
+import { ApiError } from "./errors.js";
 import { haversineDistanceM, pathDistanceKm } from "./geo.js";
 
 // How close (in metres) a route's start/end must be to the requested point to

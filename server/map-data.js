@@ -1,12 +1,13 @@
+// Plain JavaScript so imports work both locally and on Vercel (see errors.js).
 import { z } from "zod";
-import { loadJsonData } from "./data.ts";
-import { ApiError } from "./errors.ts";
+import { loadJsonData } from "./data.js";
+import { ApiError } from "./errors.js";
 
-export const MAP_DATA_FILES = {
+export const MAP_DATA_FILES = Object.freeze({
   waypoints: "map-layers/waypoints_2d.geojson",
   "rover-path": "map-layers/rover_path_2d.geojson"
-} as const;
-export type MapDataLayer = keyof typeof MAP_DATA_FILES;
+});
+/** @typedef {"waypoints" | "rover-path"} MapDataLayer */
 
 // Serve the generated 2D map layers without dropping elevation properties,
 // CRS metadata or other foreign members. Source 3D datasets are not a fallback.
@@ -30,10 +31,11 @@ const roverPathSchema = z.looseObject({
   }))
 });
 
-export async function loadMapData(
-  layer: MapDataLayer,
-  loader: (filename: string) => Promise<unknown> = loadJsonData
-) {
+/**
+ * @param {MapDataLayer} layer
+ * @param {(filename: string) => Promise<unknown>} [loader]
+ */
+export async function loadMapData(layer, loader = loadJsonData) {
   const filename = MAP_DATA_FILES[layer];
   if (!filename) throw new ApiError(404, "NOT_FOUND", "Map layer not found.");
   const data = await loader(filename);

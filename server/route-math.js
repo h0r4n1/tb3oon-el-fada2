@@ -8,7 +8,7 @@
 
 // Mission settings are owned by the backend team in server/config.ts.
 // Node can import a .ts file directly here because it strips the TypeScript types.
-import { MISSION_CONFIG } from "./config.ts";
+import { MISSION_CONFIG } from "./config.js";
 import { clamp } from "./geo.js";
 
 // Feasibility labels, using the exact words from the brief (section 7,

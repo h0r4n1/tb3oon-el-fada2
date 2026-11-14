@@ -12,9 +12,9 @@
 // Either way the candidates are evaluated, ranked and capped at 6.
 // It never returns a made-up route: no match means an empty list plus a message.
 
-import { MISSION_CONFIG } from "./config.ts";
-import { loadJsonData } from "./data.ts";
-import { ApiError } from "./errors.ts";
+import { MISSION_CONFIG } from "./config.js";
+import { loadJsonData } from "./data.js";
+import { ApiError } from "./errors.js";
 import { evaluateRoute } from "./route-math.js";
 import { rankCandidates, capCandidates } from "./ranking.js";
 import { loadTraverse } from "./traverse.js";

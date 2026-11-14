@@ -1,9 +1,19 @@
-import { MISSION_CONFIG } from "./config.ts";
-import { routeRequestSchema, routeResultSchema, type Region, type RoutePlanner } from "./contracts.ts";
-import { loadRegion } from "./data.ts";
-import { ApiError } from "./errors.ts";
+import { MISSION_CONFIG } from "./config.js";
+import { regionSchema, routeRequestSchema, routeResultSchema, type Region, type RoutePlanner } from "./contracts.ts";
+import { loadJsonData } from "./data.js";
+import { ApiError } from "./errors.js";
 import { planRoutes } from "./route-engine.js";
-import { loadMapData, type MapDataLayer } from "./map-data.ts";
+import { loadMapData, type MapDataLayer } from "./map-data.js";
+
+// Lives here (not in data.js) because data.js is plain JavaScript and must not
+// import a .ts file: Vercel does not rewrite .ts imports inside .js files.
+export async function loadRegion(): Promise<Region> {
+  const result = regionSchema.safeParse(await loadJsonData("region.json"));
+  if (!result.success) {
+    throw new ApiError(503, "INVALID_DATA", "region.json does not match the region contract.");
+  }
+  return result.data;
+}
 
 const MAX_BODY_BYTES = 64 * 1024;
 

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
-import { MISSION_CONFIG } from "../server/config.ts";
-import { loadJsonData } from "../server/data.ts";
-import { ApiError } from "../server/errors.ts";
+import { MISSION_CONFIG } from "../server/config.js";
+import { loadJsonData } from "../server/data.js";
+import { ApiError } from "../server/errors.js";
 import type { Region, RoutePlanner } from "../server/contracts.ts";
 
 // Synthetic fixtures for API validation only, not Mars observations or a real route.
