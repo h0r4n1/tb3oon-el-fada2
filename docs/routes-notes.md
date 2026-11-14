@@ -488,4 +488,10 @@ fixtures in `tests/`, and these notes were written by **Claude Code
   `src/ui/rover-os.css` and `tests/local-path.test.js`. The visual design and
   the original canvas artwork (orbit, terrain, rover, lander) are Naser's.
 
+- **14 Nov (Version 1.2):** Claude Code made three changes at Abood's request:
+  playback 1× is now real time (1 mission minute = 60 real seconds) with
+  steps 1×/3×/5×/10×/15×; the drive view uses a fixed camera so the terrain
+  stays still and only the rover moves; the start headline reads "BUILT FOR
+  THE UNKNOWN". Engine, API and numbers unchanged.
+
 To be recorded in the team submission notes as required.

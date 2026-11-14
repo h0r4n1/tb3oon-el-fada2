@@ -587,8 +587,10 @@ function metric(label, value) {
 // ---------------------------------------------------------------------------
 // 6. Mission: ONE simulation clock and ONE active plan for both views.
 // ---------------------------------------------------------------------------
-// Simulated minutes per real second at playback 1x.
-const SIM_MINUTES_PER_SECOND = 1;
+// Playback 1x is a true 1:1 clock: one simulated minute takes one real minute.
+// Faster steps only speed up the playback, never the engine's numbers.
+const SIM_MINUTES_PER_SECOND = 1 / 60;
+const PLAYBACK_SPEEDS = [1, 3, 5, 10, 15];
 
 function launchMission(candidate, plan) {
   state.mission = {
@@ -613,6 +615,7 @@ function launchMission(candidate, plan) {
   const m = state.mission;
   m.yaw = headingAt(m.path, 0, 25) ?? 0;
   m.position = candidate.geometry[0];
+  m.camYaw = m.yaw;
   closeInspector();
   ensureRoverMarker();
   drawRoute(candidate);
@@ -790,8 +793,14 @@ function frame(now) {
     if (!$('world').hidden && (state.scene === 'descent' || !state.mapOpenDuringDrive)) {
       const s = legS(m);
       const moving = !m.paused && m.dwellMin <= 0 && !m.turning && ['navigating', 'returning'].includes(m.phase);
+      // Chase camera: looks along the route about 60 m ahead of the rover (so
+      // the path stays in front), and follows the rover itself while it turns.
+      const here = pointAt(m.path, s);
+      const ahead = pointAt(m.path, Math.min(m.path.length, s + 60));
+      const lookYaw = !m.turning && Math.hypot(ahead.x - here.x, ahead.z - here.z) > 5 ? Math.atan2(ahead.x - here.x, ahead.z - here.z) : m.yaw;
+      m.camYaw += angleDiff(lookYaw, m.camYaw) * Math.min(1, dtSeconds * (reducedMotion ? 20 : 5));
       drawSurface(ctx, viewW, viewH, {
-        cam: pointAt(m.path, s), yaw: m.yaw, descent, path: m.path, s,
+        cam: pointAt(m.path, s), yaw: m.camYaw, lean: angleDiff(m.yaw, m.camYaw), descent, path: m.path, s,
         showRoute: m.phase !== 'arrived' && m.phase !== 'complete' && !m.turning,
         stops: stopBeacons(m), lander: { x: 0, z: 0 }, moving, t,
       });
@@ -934,7 +943,7 @@ $('go').onclick = () => {
 };
 $('speedBtn').onclick = () => {
   const m = state.mission;
-  m.speed = m.speed === 1 ? 3 : m.speed === 3 ? 10 : 1;
+  m.speed = PLAYBACK_SPEEDS[(PLAYBACK_SPEEDS.indexOf(m.speed) + 1) % PLAYBACK_SPEEDS.length];
   updateHud();
 };
 $('addStop').onclick = () => openProposals();
@@ -1229,7 +1238,7 @@ function renderSources() {
       el('li', {}, `Flat speed ${c.flatSpeedKmh} km/h; slope limit ${c.maxSlopeDegrees}°; mission ${c.missionDurationMinutes} min with a ${c.minimumTimeReserveMinutes} min reserve.`),
       el('li', {}, `Battery ${c.batteryCapacityKWh} kWh with a ${c.batteryReservePercent}% reserve; driving ${c.baselineKWhPerKm} kWh/km; auxiliary ${c.auxiliaryKW} kW (also spent during science stops).`),
       el('li', {}, `Overall score = ${c.terrainWeight} × terrain safety + ${c.timeWeight} × time. Speed slows and energy rises with slope (team brief formulas).`),
-      el('li', {}, 'Playback speed (1×/3×/10×) only changes how fast the simulation runs, never a route cost.')),
+      el('li', {}, 'Playback speed (1×/3×/5×/10×/15×; 1× is real time) only changes how fast the simulation runs, never a route cost.')),
     el('h3', {}, 'Limitations'),
     el('ul', {},
       el('li', {}, 'Routes follow where the robotic rover actually drove. That is not a computed crewed-rover route and not proof the ground is safe.'),

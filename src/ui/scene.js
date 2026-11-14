@@ -7,6 +7,8 @@
 // route geometry returned by the engine (converted to local metres), instead
 // of the old sine-wave road. The hills themselves are illustrative only: there
 // is no elevation grid, and the screen says "Illustrative terrain".
+// v1.2: a chase camera follows the rover; the ground, rocks and hills are
+// anchored to WORLD coordinates, so they stream past in perspective.
 
 import { pointAt, headingAt } from './local-path.js';
 
@@ -17,6 +19,8 @@ export const VISUAL_SCALE = 0.35;
 const noise = (x, z) =>
   Math.sin(x * 0.035 + z * 0.013) * 12 + Math.cos(x * 0.016 - z * 0.028) * 17 + Math.sin(x * 0.009 + z * 0.005) * 28;
 const terrainY = (x, z) => noise(x, z) * 0.55;
+// Deterministic 0..1 value per world cell (same cell -> same value, always).
+const hash = (i, j) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
 
 // Orbit backdrop (procedural stars and planet glow behind the NASA globe image).
 export function drawOrbit(ctx, w, h, t) {
@@ -57,13 +61,15 @@ export function drawSurface(ctx, w, h, view) {
   ctx.beginPath();
   ctx.arc(w * 0.76, h * 0.23, 25, 0, 7);
   ctx.fill();
+  // Distant hills turn with the camera heading (1 radian = `unit` pixels).
+  const hillShift = view.yaw * Math.min(w, h) * 0.95;
   for (let layer = 0; layer < 3; layer++) {
     ctx.fillStyle = ['#695047', '#755447', '#846047'][layer];
     ctx.beginPath();
     ctx.moveTo(0, horizon + layer * 15);
-    const shift = view.yaw * 180;
     for (let x = 0; x <= w + 20; x += 20) {
-      ctx.lineTo(x, horizon - 25 - Math.sin((x + shift * (layer + 1)) * 0.009 + layer * 3) * 22 - Math.cos((x + shift) * 0.023 + layer) * 12 + layer * 16);
+      const hx = x + hillShift;
+      ctx.lineTo(x, horizon - 25 - Math.sin(hx * 0.009 + layer * 3) * 22 - Math.cos(hx * 0.023 + layer) * 12 + layer * 16);
     }
     ctx.lineTo(w, h);
     ctx.lineTo(0, h);
@@ -92,19 +98,61 @@ export function drawSurface(ctx, w, h, view) {
     return project(wx, wz, terrainY(wx, wz));
   }
 
-  // Illustrative ground mesh.
-  for (let z = 1800; z > 30; z -= 35) {
-    for (let x = -900; x < 950; x += 55) {
-      const p = [groundPoint(x, z), groundPoint(x + 55, z), groundPoint(x + 55, z + 35), groundPoint(x, z + 35)];
-      const shade = Math.round(55 + noise(camX + x * cy + z * sy, camZ - x * sy + z * cy) * 0.28 + (z / 1800) * 25);
-      ctx.fillStyle = `rgb(${shade + 38},${shade + 9},${shade - 8})`;
-      ctx.beginPath();
-      p.forEach((v, i) => (i ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1])));
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = '#c98e5720';
-      ctx.lineWidth = 0.5;
-      ctx.stroke();
+  // Illustrative ground, anchored to the WORLD (v1.2): tiles and rocks sit on a
+  // fixed world lattice, so the same patch of ground always looks the same and
+  // only moves on screen because the camera moves. Drawn far to near.
+  const CELL = 40;
+  const FAR = 1700;
+  const reachX = FAR * 1.25;
+  const cells = [];
+  // World-space bounding box of the visible wedge in front of the camera.
+  const corners = [[0, 0], [-reachX, FAR], [reachX, FAR], [-60, 0], [60, 0]].map(([lx, dz]) => [camX + lx * cy + dz * sy, camZ - lx * sy + dz * cy]);
+  const i0 = Math.floor(Math.min(...corners.map((c) => c[0])) / CELL);
+  const i1 = Math.ceil(Math.max(...corners.map((c) => c[0])) / CELL);
+  const j0 = Math.floor(Math.min(...corners.map((c) => c[1])) / CELL);
+  const j1 = Math.ceil(Math.max(...corners.map((c) => c[1])) / CELL);
+  for (let i = i0; i < i1; i++) {
+    for (let j = j0; j < j1; j++) {
+      const mx = (i + 0.5) * CELL - camX;
+      const mz = (j + 0.5) * CELL - camZ;
+      const depth = mx * sy + mz * cy + 50;
+      const lateral = mx * cy - mz * sy;
+      if (depth < 4 || depth > FAR || Math.abs(lateral) > depth * 1.3 + 80) continue;
+      cells.push([depth, i, j]);
+    }
+  }
+  cells.sort((a, b) => b[0] - a[0]);
+  const vertex = (i, j) => { const x = i * CELL; const z = j * CELL; return project(x, z, terrainY(x, z)); };
+  for (const [depth, i, j] of cells) {
+    const p = [vertex(i, j), vertex(i + 1, j), vertex(i + 1, j + 1), vertex(i, j + 1)];
+    const wx = (i + 0.5) * CELL;
+    const wz = (j + 0.5) * CELL;
+    const h = hash(i, j);
+    const shade = Math.round(55 + noise(wx, wz) * 0.28 + (h - 0.5) * 8 + (depth / FAR) * 25);
+    ctx.fillStyle = `rgb(${shade + 38},${shade + 9},${shade - 8})`;
+    ctx.beginPath();
+    p.forEach((v, k) => (k ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1])));
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#c98e5718';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    // A rock in some cells, at a fixed spot in the cell; smaller with distance.
+    if (h < 0.22 && depth < 1100) {
+      const rx = i * CELL + hash(j, i) * CELL;
+      const rz = j * CELL + hash(i + 7, j - 3) * CELL;
+      const r = project(rx, rz, terrainY(rx, rz));
+      const size = (1.5 + h * 14) * r[2];
+      if (size > 0.6) {
+        ctx.fillStyle = '#3d2a2280';
+        ctx.beginPath();
+        ctx.ellipse(r[0] + size * 0.3, r[1] + size * 0.15, size * 1.1, size * 0.35, 0, 0, 7);
+        ctx.fill();
+        ctx.fillStyle = h < 0.1 ? '#6e5243' : '#7d5c48';
+        ctx.beginPath();
+        ctx.ellipse(r[0], r[1] - size * 0.3, size, size * 0.6, 0, 0, 7);
+        ctx.fill();
+      }
     }
   }
 
@@ -125,10 +173,10 @@ export function drawSurface(ctx, w, h, view) {
       const b = worldAt(s2);
       const len = Math.hypot(b.x - a.x, b.z - a.z);
       if (len < 1e-6) continue;
-      const nx = ((b.z - a.z) / len) * 4;
-      const nz = (-(b.x - a.x) / len) * 4;
+      const nx = ((b.z - a.z) / len) * 3;
+      const nz = (-(b.x - a.x) / len) * 3;
       const pa = project(a.x, a.z, terrainY(a.x, a.z) + 1);
-      if (pa[3] < 12) continue;
+      if (pa[3] < 48) continue; // nothing under or behind the rover
       const quad = [
         project(a.x - nx, a.z - nz, terrainY(a.x, a.z) + 1),
         project(a.x + nx, a.z + nz, terrainY(a.x, a.z) + 1),
@@ -247,8 +295,11 @@ export function drawSurface(ctx, w, h, view) {
   const rw = Math.min(w * 0.21, 220);
   const rh = rw * 0.48;
   ctx.save();
+  // The camera follows a little behind the rover's heading, so in a bend the
+  // rover visibly steers left/right before the view swings round (always from behind).
+  const lean = Math.max(-0.5, Math.min(0.5, view.lean ?? 0));
   ctx.translate(w / 2, h * 0.79);
-  ctx.rotate(view.moving ? Math.sin(view.t * 3) * 0.008 : 0);
+  ctx.rotate(lean * 0.18 + (view.moving ? Math.sin(view.t * 3) * 0.008 : 0));
   ctx.fillStyle = '#0006';
   ctx.beginPath();
   ctx.ellipse(0, rh * 0.65, rw * 0.7, rh * 0.3, 0, 0, 7);
