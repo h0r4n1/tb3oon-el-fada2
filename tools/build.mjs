@@ -32,4 +32,10 @@ for (const name of ["src", "assets", "public"]) {
     });
   }
 }
+// Publish the agreed science target catalog for the route picker.
+const targetCatalog = join(root, "data", "targets.geojson");
+if (await exists(targetCatalog) && (await lstat(targetCatalog)).isFile()) {
+  await mkdir(join(output, "map-data"), { recursive: true });
+  await cp(targetCatalog, join(output, "map-data", "targets.geojson"));
+}
 console.log(`Frontend built in dist/ (entry: ${entry}). Backend, scripts and data/ are not public static assets.`);
